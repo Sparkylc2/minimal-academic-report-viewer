@@ -1,0 +1,268 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <title>PDF Viewer</title>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        background: transparent;
+        overflow: hidden;
+      }
+
+      #pdf-frame {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        border: none;
+        background: white;
+      }
+
+      #drop-zone {
+        position: absolute;
+        top: 0;
+        left: 0;
+        right: 0;
+        bottom: 0;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(255, 255, 255, 0.95);
+        backdrop-filter: blur(10px);
+        display: none;
+      }
+
+      #drop-zone.active {
+        display: flex;
+      }
+
+      #drop-zone.dragging {
+        background: rgba(200, 200, 255, 0.95);
+      }
+
+      .drop-text {
+        font-size: 24px;
+        color: #666;
+        pointer-events: none;
+        text-align: center;
+      }
+    </style>
+  </head>
+  <body>
+    <iframe id="pdf-frame" type="application/pdf"></iframe>
+
+    <div id="drop-zone">
+      <div class="drop-text">
+        Drop PDF here or pass via CLI<br /><small
+          >Press Cmd+Q or Esc to quit</small
+        >
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = window.electron;
+      const pdfFrame = document.getElementById("pdf-frame");
+      const dropZone = document.getElementById("drop-zone");
+      let currentPdfPath = null;
+      let frameLoaded = false;
+
+      // Keyboard shortcuts
+      document.addEventListener("keydown", (e) => {
+        // Cmd+Q or Ctrl+Q to quit
+        if ((e.metaKey || e.ctrlKey) && e.key === "q") {
+          ipcRenderer.send("close-window");
+        }
+        // Escape to quit
+        if (e.key === "Escape") {
+          ipcRenderer.send("close-window");
+        }
+      });
+
+      // Hide PDF controls with CSS injection
+      function injectHideControlsCSS() {
+        try {
+          const frameDoc =
+            pdfFrame.contentDocument || pdfFrame.contentWindow.document;
+          if (frameDoc) {
+            const style = frameDoc.createElement("style");
+            style.textContent = `
+            /* Hide Chrome PDF viewer controls */
+            #toolbar, 
+            #topbar,
+            .toolbar,
+            .download-button,
+            .print-button,
+            pdf-viewer-toolbar,
+            viewer-toolbar,
+            viewer-pdf-toolbar,
+            #toolbarContainer,
+            #toolbarViewer,
+            #toolbarSidebar,
+            #secondaryToolbar,
+            .findbar,
+            .secondaryToolbar,
+            .doorHanger,
+            div[id*="toolbar"],
+            div[class*="toolbar"],
+            /* Hide page controls */
+            #numPages,
+            #pageNumber,
+            .page-number,
+            /* Hide zoom controls */
+            #scaleSelectContainer,
+            #zoomOut,
+            #zoomIn,
+            .zoom,
+            /* Hide filename display */
+            #title,
+            .title,
+            /* Hide all overlays and controls */
+            #overlayContainer,
+            #passwordOverlay,
+            #documentPropertiesOverlay,
+            #printServiceOverlay,
+            /* Hide side panels */
+            #sidebarContainer,
+            #outerContainer > #sidebarContainer,
+            /* Hide any floating controls */
+            [style*="position: fixed"],
+            [style*="position: absolute"]:not(#viewer):not(.page),
+            /* Additional Chrome PDF viewer specific */
+            #zoom-buttons,
+            #page-buttons,
+            #more-buttons,
+            #open-button,
+            #download-button,
+            #print-button,
+            material-button,
+            cr-icon-button,
+            viewer-zoom-button,
+            viewer-download-controls,
+            viewer-toolbar-dropdown {
+              display: none !important;
+              visibility: hidden !important;
+              opacity: 0 !important;
+              pointer-events: none !important;
+              height: 0 !important;
+              width: 0 !important;
+            }
+            
+            /* Ensure PDF content fills the entire frame */
+            body, html {
+              margin: 0 !important;
+              padding: 0 !important;
+              overflow: auto !important;
+            }
+            
+            #viewer, 
+            #mainContainer,
+            #viewerContainer {
+              top: 0 !important;
+              margin: 0 !important;
+              padding: 0 !important;
+            }
+            
+            /* Remove any borders or backgrounds */
+            * {
+              border: none !important;
+              box-shadow: none !important;
+            }
+          `;
+            frameDoc.head.appendChild(style);
+          }
+        } catch (e) {
+          // Cross-origin restriction, try alternative method
+          console.log("Direct CSS injection failed, using frame attributes");
+        }
+      }
+
+      // Load PDF
+      function loadPdf(pdfPath) {
+        currentPdfPath = pdfPath;
+        pdfFrame.src = `file://${pdfPath}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`;
+        dropZone.classList.remove("active");
+
+        // Try to hide controls after load
+        pdfFrame.onload = () => {
+          frameLoaded = true;
+          // Try multiple times as PDF viewer may load asynchronously
+          setTimeout(injectHideControlsCSS, 100);
+          setTimeout(injectHideControlsCSS, 500);
+          setTimeout(injectHideControlsCSS, 1000);
+        };
+      }
+
+      // Listen for PDF load events
+      ipcRenderer.on("load-pdf", (event, pdfPath) => {
+        loadPdf(pdfPath);
+      });
+
+      // Listen for PDF reload events
+      ipcRenderer.on("reload-pdf", (event, pdfPath) => {
+        // Store scroll position if possible
+        let scrollPos = 0;
+        try {
+          const frameWindow = pdfFrame.contentWindow;
+          if (frameWindow) {
+            scrollPos = frameWindow.scrollY || 0;
+          }
+        } catch (e) {}
+
+        // Reload
+        loadPdf(pdfPath);
+
+        // Restore scroll position
+        if (scrollPos > 0) {
+          setTimeout(() => {
+            try {
+              const frameWindow = pdfFrame.contentWindow;
+              if (frameWindow) {
+                frameWindow.scrollTo(0, scrollPos);
+              }
+            } catch (e) {}
+          }, 500);
+        }
+      });
+
+      // Drag and drop
+      document.addEventListener("dragover", (e) => {
+        e.preventDefault();
+        dropZone.classList.add("active", "dragging");
+      });
+
+      document.addEventListener("dragleave", (e) => {
+        if (!e.relatedTarget) {
+          dropZone.classList.remove("dragging");
+        }
+      });
+
+      document.addEventListener("drop", (e) => {
+        e.preventDefault();
+        dropZone.classList.remove("dragging");
+
+        const file = e.dataTransfer.files[0];
+        if (file && file.type === "application/pdf") {
+          loadPdf(file.path);
+          ipcRenderer.send("load-new-pdf", file.path);
+        } else {
+          dropZone.classList.remove("active");
+        }
+      });
+
+      // Show drop zone if no PDF loaded
+      if (!currentPdfPath) {
+        dropZone.classList.add("active");
+      }
+    </script>
+  </body>
+</html>

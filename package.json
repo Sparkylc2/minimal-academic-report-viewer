@@ -1,0 +1,24 @@
+{
+  "name": "tex-pdf-viewer",
+  "version": "1.0.0",
+  "description": "Transparent PDF viewer for LaTeX documents",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --enable-logging"
+  },
+  "keywords": [
+    "pdf",
+    "viewer",
+    "latex",
+    "tex"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^27.0.0"
+  },
+  "bin": {
+    "pdfview": "./cli.js"
+  }
+}
