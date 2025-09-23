@@ -1,5 +1,5 @@
 ## About
-This viewer is about as minimal as it gets. It has no title-bar, traffic light controls, menu-bar or toolbars. It is just a window for previewing PDFs (you can view traffic light controls by hovering over the top left of the window). I threw this together because I was annoyed that there seemed to be none available, and as my Kitty terminal is also borderless, I wanted something that would fit in with it. The viewer accepts vim controls (HJKL) and the standard zoom in, zoom out keybindings.
+This viewer is about as minimal as it gets. It has no title-bar, traffic light controls, menu-bar or toolbars. It is just a window for previewing PDFs (you can view traffic light controls by hovering over the top left of the window). I threw this together because I was annoyed that there seemed to be none available, and as my Kitty terminal is also borderless, I wanted something that would fit in with it. The viewer accepts vim controls (HJKL, g and G) and the standard zoom in, zoom out keybindings (Cmd + = and Cmd + -). You can also pan with the arrow keys. It has smooth scrolling and zooming (what a pain to implement).
 
 70% of this has been vibe coded so I make no performance promises ;)
 
@@ -11,6 +11,14 @@ To use this pdf viewer, clone it wherever, cd in, and run `npm install` and then
 If you want to configure it further, change colors etc. etc. you can either pass a few params in as args (namely `--pageGap`, `--pageRadius`, `--fit` and `--bg`). `--fit` takes either `width`, `height` or `auto`. The others take numbers (for `pageGap` and `pageRadius`) or a hex string (for `bg`).
 
 Any other customization can be done just by editing the files.
+If you want to rebind hjkl to something else, you can do that here in `index.html` (and you can increase the pan speed as well):
+```js
+if (activePanKeys.has("h")) targetVx -= PAN_SPEED;
+        if (activePanKeys.has("l")) targetVx += PAN_SPEED;
+        if (activePanKeys.has("k")) targetVy -= PAN_SPEED;
+        if (activePanKeys.has("j")) targetVy += PAN_SPEED;
+
+```
 
 ## Neovim stuff
 When using this with neovim, you can use the following set up. I havent tested this with literally any other setup so whether it works or not is unknown.
