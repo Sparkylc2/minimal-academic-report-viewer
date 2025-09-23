@@ -3,9 +3,16 @@
   "version": "1.3.0",
   "description": "Minimal PDF viewer for LaTeX (pdf.js with smooth pinch zoom)",
   "main": "main.js",
+  "productName": "TeX PDF Viewer",
+  "author": "Your Name",
+  "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging"
+    "dev": "electron . --enable-logging",
+    "dist": "electron-builder",
+    "dist-mac": "electron-builder --mac",
+    "dist-linux": "electron-builder --linux",
+    "dist-win": "electron-builder --win"
   },
   "keywords": [
     "pdf",
@@ -14,15 +21,48 @@
     "tex",
     "pdf.js"
   ],
-  "author": "",
-  "license": "MIT",
   "devDependencies": {
-    "electron": "^38.1.2"
+    "electron": "^38.1.2",
+    "electron-builder": "^25.1.8"
   },
   "dependencies": {
     "pdfjs-dist": "^5.4.149"
   },
   "bin": {
     "pdfview": "./cli.js"
+  },
+  "build": {
+    "appId": "com.yourname.texpdfviewer",
+    "productName": "TeX PDF Viewer",
+    "directories": {
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.productivity",
+      "icon": "build/icon.icns",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "icon": "build/icon.png",
+      "category": "Office"
+    },
+    "win": {
+      "target": "nsis",
+      "icon": "build/icon.ico"
+    },
+    "files": [
+      "**/*",
+      "!dist/**/*",
+      "!.git/**/*",
+      "!.gitignore",
+      "!README.md"
+    ]
   }
 }

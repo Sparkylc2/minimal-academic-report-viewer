@@ -6,10 +6,8 @@ app.commandLine.appendSwitch("disable-pinch");
 let mainWindow;
 let watcher;
 
-// Read all argv; we’ll pick the .pdf and flags from here.
 const argv = process.argv.slice(1);
 
-// ---------------- CLI flags ----------------
 function parseNumberFlag(name, def) {
   const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
   if (withEq) {
@@ -44,7 +42,6 @@ function parseStringFlag(name, def) {
   return def;
 }
 
-// Keep only what you asked for
 const viewerConfig = {
   pageGap: parseNumberFlag("pageGap", 16),
   pageRadius: parseNumberFlag("pageRadius", 8),
@@ -52,7 +49,6 @@ const viewerConfig = {
   bg: parseStringFlag("bg", "#181616"),
 };
 
-// Pick the first .pdf argument
 function resolvePdfArg(args) {
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
@@ -90,10 +86,9 @@ function createWindow() {
     mainWindow.webContents.setLayoutZoomLevelLimits(0, 0);
   }
 
-  // Disable browser bitmap zoom; we implement true pdf.js zoom in the renderer.
   mainWindow.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
 
-  mainWindow.setTitle("PDF Viewer");
+  mainWindow.setTitle("TeX PDF Viewer");
   mainWindow.loadFile("index.html");
 
   mainWindow.webContents.on("did-finish-load", () => {
