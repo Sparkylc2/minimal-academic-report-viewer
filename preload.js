@@ -3,15 +3,17 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("electron", {
   ipcRenderer: {
     send: (channel, data) => {
-      const validChannels = ["close-window", "load-new-pdf"];
-      if (validChannels.includes(channel)) {
+      if (channel === "close-window" || channel === "load-new-pdf") {
         ipcRenderer.send(channel, data);
       }
     },
-    on: (channel, func) => {
-      const validChannels = ["load-pdf", "reload-pdf"];
-      if (validChannels.includes(channel)) {
-        ipcRenderer.on(channel, (event, ...args) => func(event, ...args));
+    on: (channel, fn) => {
+      if (
+        channel === "viewer-config" ||
+        channel === "load-pdf" ||
+        channel === "reload-pdf"
+      ) {
+        ipcRenderer.on(channel, (_event, ...args) => fn(...args));
       }
     },
   },

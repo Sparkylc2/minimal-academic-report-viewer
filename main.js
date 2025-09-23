@@ -3,74 +3,98 @@ const path = require("path");
 const fs = require("fs");
 
 let mainWindow;
-let pdfPath =
-  process.argv[2] || process.argv.find((arg) => arg.endsWith(".pdf"));
 let watcher;
+
+// Read ALL argv (safer across Electron launch modes). We'll just pick the .pdf.
+const argv = process.argv.slice(1);
+
+// --- CLI flags (unchanged) ---
+function parseNumberFlag(name, def) {
+  const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
+  if (withEq) {
+    const v = Number(withEq.split("=")[1]);
+    if (!Number.isNaN(v)) return v;
+  }
+  const i = argv.indexOf(`--${name}`);
+  if (i !== -1) {
+    const v = Number(argv[i + 1]);
+    if (!Number.isNaN(v)) return v;
+  }
+  return def;
+}
+
+const viewerConfig = {
+  insetY: parseNumberFlag("inset", 24),
+  sideMargin: parseNumberFlag("sideMargin", 24),
+  pageGap: parseNumberFlag("pageGap", 12),
+};
+
+// --- robustly pick the first .pdf argument ---
+function resolvePdfArg(args) {
+  for (const raw of args) {
+    if (!raw || raw.startsWith("--")) continue;
+    const a = String(raw).trim();
+    if (/\.pdf$/i.test(a)) return path.resolve(a);
+    try {
+      const abs = path.resolve(a);
+      if (fs.existsSync(abs) && path.extname(abs).toLowerCase() === ".pdf") {
+        return abs;
+      }
+    } catch (_) {}
+  }
+  return null;
+}
+
+let pdfPath = resolvePdfArg(argv);
 
 function createWindow() {
   mainWindow = new BrowserWindow({
     width: 900,
     height: 1200,
     frame: false,
-    titleBarStyle: "customButtonsOnHover", // Better for window managers
-    transparent: false, // Solid background for window manager compatibility
-    backgroundColor: "#ffffff",
-    hasShadow: true, // Helps window managers detect the window
-    vibrancy: null, // Disable vibrancy for better compatibility
-    minimizable: true,
-    maximizable: true,
-    closable: true,
-    focusable: true, // Ensure window can receive focus
-    skipTaskbar: false, // Show in taskbar
+    transparent: true,
+    backgroundColor: "transparent",
+    titleBarStyle: "customButtonsOnHover",
+    hasShadow: false,
     webPreferences: {
-      nodeIntegration: false,
       contextIsolation: true,
+      nodeIntegration: false,
       preload: path.join(__dirname, "preload.js"),
-      webviewTag: true,
-      webSecurity: false, // Allow CSS injection for PDF customization
     },
   });
 
-  // Set window title for window managers
+  mainWindow.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
+
   mainWindow.setTitle("PDF Viewer");
-
-  // Ensure window is visible to window managers
-  mainWindow.setVisibleOnAllWorkspaces(false);
-  mainWindow.setAlwaysOnTop(false);
-
   mainWindow.loadFile("index.html");
 
-  // Send pdf path to renderer when ready
   mainWindow.webContents.on("did-finish-load", () => {
-    if (pdfPath && fs.existsSync(pdfPath)) {
-      mainWindow.webContents.send("load-pdf", path.resolve(pdfPath));
-      watchFile(path.resolve(pdfPath));
+    mainWindow.webContents.send("viewer-config", viewerConfig);
+
+    if (pdfPath) {
+      mainWindow.webContents.send("load-pdf", pdfPath);
+      if (fs.existsSync(pdfPath)) {
+        watchFile(pdfPath);
+      } else {
+        console.warn("[pdfview] Path did not exist at launch:", pdfPath);
+      }
+    } else {
+      console.warn("[pdfview] No .pdf argument found. argv =", argv);
     }
-  });
-
-  // Handle window close from keyboard shortcut
-  ipcMain.on("close-window", () => {
-    app.quit();
-  });
-
-  // Handle zoom controls
-  ipcMain.on("zoom", (event, direction) => {
-    mainWindow.webContents.send("zoom", direction);
   });
 }
 
 function watchFile(filePath) {
-  if (watcher) {
-    watcher.close();
-  }
-
-  let debounceTimer;
+  if (watcher) watcher.close();
+  let debounce;
   watcher = fs.watch(filePath, (eventType) => {
     if (eventType === "change") {
-      clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        mainWindow.webContents.send("reload-pdf", filePath);
-      }, 300);
+      clearTimeout(debounce);
+      debounce = setTimeout(() => {
+        if (mainWindow && !mainWindow.isDestroyed()) {
+          mainWindow.webContents.send("reload-pdf", filePath);
+        }
+      }, 200);
     }
   });
 }
@@ -79,21 +103,19 @@ app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {
   if (watcher) watcher.close();
-  if (process.platform !== "darwin") {
-    app.quit();
-  }
+  if (process.platform !== "darwin") app.quit();
 });
 
 app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) {
-    createWindow();
-  }
+  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
-// Handle CLI arguments for live updates
-ipcMain.on("load-new-pdf", (event, newPath) => {
-  if (fs.existsSync(newPath)) {
+ipcMain.on("load-new-pdf", (_event, newPath) => {
+  if (typeof newPath === "string" && fs.existsSync(newPath)) {
     pdfPath = newPath;
     watchFile(newPath);
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("load-pdf", newPath);
+    }
   }
 });

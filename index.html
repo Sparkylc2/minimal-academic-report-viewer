@@ -2,267 +2,268 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>PDF Viewer</title>
+    <title>PDF Viewer (minimal)</title>
+    <link
+      rel="stylesheet"
+      href="./node_modules/pdfjs-dist/web/pdf_viewer.css"
+    />
     <style>
+      :root {
+        --inset-y: 0px; /* top & bottom inset INSIDE the scroll area */
+        --side-margin: 0px; /* left/right margin around pages */
+        --page-gap: 64px; /* vertical gap between pages */
+        --bg: #181616;
+      }
       * {
-        margin: 0;
-        padding: 0;
         box-sizing: border-box;
       }
-
       html,
       body {
+        margin: 0;
+        padding: 0;
         width: 100%;
         height: 100%;
-        background: transparent;
         overflow: hidden;
+        background: transparent;
+        -webkit-user-select: none;
       }
-
-      #pdf-frame {
-        position: absolute;
-        top: 0;
-        left: 0;
-        width: 100%;
-        height: 100%;
-        border: none;
-        background: white;
+      #viewerContainer {
+        position: fixed;
+        inset: 0;
+        overflow: auto;
+        padding: var(--inset-y) var(--side-margin);
+        background: var(--bg);
+        overscroll-behavior-y: contain;
+        scrollbar-gutter: stable both-edges;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
       }
-
-      #drop-zone {
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: rgba(255, 255, 255, 0.95);
-        backdrop-filter: blur(10px);
+      #viewerContainer::-webkit-scrollbar {
+        width: 0;
+        height: 0;
         display: none;
       }
-
-      #drop-zone.active {
-        display: flex;
+      #viewer {
+        background: var(--bg) !important;
+      }
+      .pdfViewer .page {
+        margin: 0 auto var(--page-gap) auto !important;
+        box-shadow: none !important;
+        border: none !important;
+        background: #fff;
+        border-radius: 8px;
       }
 
-      #drop-zone.dragging {
-        background: rgba(200, 200, 255, 0.95);
-      }
-
-      .drop-text {
-        font-size: 24px;
-        color: #666;
-        pointer-events: none;
-        text-align: center;
+      [class*="toolbar"],
+      [id*="toolbar"],
+      #secondaryToolbar,
+      #overlayContainer,
+      #sidebarContainer {
+        display: none !important;
       }
     </style>
   </head>
   <body>
-    <iframe id="pdf-frame" type="application/pdf"></iframe>
-
-    <div id="drop-zone">
-      <div class="drop-text">
-        Drop PDF here or pass via CLI<br /><small
-          >Press Cmd+Q or Esc to quit</small
-        >
-      </div>
+    <div id="viewerContainer" tabindex="0" aria-label="PDF Viewer">
+      <div id="viewer" class="pdfViewer"></div>
     </div>
 
     <script>
-      const { ipcRenderer } = window.electron;
-      const pdfFrame = document.getElementById("pdf-frame");
-      const dropZone = document.getElementById("drop-zone");
-      let currentPdfPath = null;
-      let frameLoaded = false;
-
-      // Keyboard shortcuts
-      document.addEventListener("keydown", (e) => {
-        // Cmd+Q or Ctrl+Q to quit
-        if ((e.metaKey || e.ctrlKey) && e.key === "q") {
-          ipcRenderer.send("close-window");
-        }
-        // Escape to quit
-        if (e.key === "Escape") {
-          ipcRenderer.send("close-window");
-        }
-      });
-
-      // Hide PDF controls with CSS injection
-      function injectHideControlsCSS() {
-        try {
-          const frameDoc =
-            pdfFrame.contentDocument || pdfFrame.contentWindow.document;
-          if (frameDoc) {
-            const style = frameDoc.createElement("style");
-            style.textContent = `
-            /* Hide Chrome PDF viewer controls */
-            #toolbar, 
-            #topbar,
-            .toolbar,
-            .download-button,
-            .print-button,
-            pdf-viewer-toolbar,
-            viewer-toolbar,
-            viewer-pdf-toolbar,
-            #toolbarContainer,
-            #toolbarViewer,
-            #toolbarSidebar,
-            #secondaryToolbar,
-            .findbar,
-            .secondaryToolbar,
-            .doorHanger,
-            div[id*="toolbar"],
-            div[class*="toolbar"],
-            /* Hide page controls */
-            #numPages,
-            #pageNumber,
-            .page-number,
-            /* Hide zoom controls */
-            #scaleSelectContainer,
-            #zoomOut,
-            #zoomIn,
-            .zoom,
-            /* Hide filename display */
-            #title,
-            .title,
-            /* Hide all overlays and controls */
-            #overlayContainer,
-            #passwordOverlay,
-            #documentPropertiesOverlay,
-            #printServiceOverlay,
-            /* Hide side panels */
-            #sidebarContainer,
-            #outerContainer > #sidebarContainer,
-            /* Hide any floating controls */
-            [style*="position: fixed"],
-            [style*="position: absolute"]:not(#viewer):not(.page),
-            /* Additional Chrome PDF viewer specific */
-            #zoom-buttons,
-            #page-buttons,
-            #more-buttons,
-            #open-button,
-            #download-button,
-            #print-button,
-            material-button,
-            cr-icon-button,
-            viewer-zoom-button,
-            viewer-download-controls,
-            viewer-toolbar-dropdown {
-              display: none !important;
-              visibility: hidden !important;
-              opacity: 0 !important;
-              pointer-events: none !important;
-              height: 0 !important;
-              width: 0 !important;
-            }
-            
-            /* Ensure PDF content fills the entire frame */
-            body, html {
-              margin: 0 !important;
-              padding: 0 !important;
-              overflow: auto !important;
-            }
-            
-            #viewer, 
-            #mainContainer,
-            #viewerContainer {
-              top: 0 !important;
-              margin: 0 !important;
-              padding: 0 !important;
-            }
-            
-            /* Remove any borders or backgrounds */
-            * {
-              border: none !important;
-              box-shadow: none !important;
-            }
-          `;
-            frameDoc.head.appendChild(style);
-          }
-        } catch (e) {
-          // Cross-origin restriction, try alternative method
-          console.log("Direct CSS injection failed, using frame attributes");
-        }
-      }
-
-      // Load PDF
-      function loadPdf(pdfPath) {
-        currentPdfPath = pdfPath;
-        pdfFrame.src = `file://${pdfPath}#toolbar=0&navpanes=0&scrollbar=1&view=FitH`;
-        dropZone.classList.remove("active");
-
-        // Try to hide controls after load
-        pdfFrame.onload = () => {
-          frameLoaded = true;
-          // Try multiple times as PDF viewer may load asynchronously
-          setTimeout(injectHideControlsCSS, 100);
-          setTimeout(injectHideControlsCSS, 500);
-          setTimeout(injectHideControlsCSS, 1000);
+      if (!Promise.withResolvers) {
+        Promise.withResolvers = function () {
+          let resolve, reject;
+          const promise = new Promise((res, rej) => {
+            resolve = res;
+            reject = rej;
+          });
+          return { promise, resolve, reject };
         };
       }
+    </script>
 
-      // Listen for PDF load events
-      ipcRenderer.on("load-pdf", (event, pdfPath) => {
-        loadPdf(pdfPath);
+    <script type="module">
+      import * as pdfjsLib from "./node_modules/pdfjs-dist/build/pdf.mjs";
+      import * as pdfjsViewer from "./node_modules/pdfjs-dist/web/pdf_viewer.mjs";
+
+      pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
+        "./node_modules/pdfjs-dist/build/pdf.worker.mjs",
+        import.meta.url,
+      ).toString();
+
+      const container = document.getElementById("viewerContainer");
+      const viewerEl = document.getElementById("viewer");
+
+      const { ipcRenderer } = window.electron;
+
+      const eventBus = new pdfjsViewer.EventBus();
+      const linkService = new pdfjsViewer.PDFLinkService({ eventBus });
+
+      const pdfViewer = new pdfjsViewer.PDFViewer({
+        container,
+        viewer: viewerEl,
+        eventBus,
+        linkService,
+        useOnlyCssZoom: true,
+        textLayerMode: 2,
+        annotationMode: 2,
+        enableScripting: false,
+        l10n: pdfjsViewer.NullL10n,
+      });
+      linkService.setViewer(pdfViewer);
+
+      ipcRenderer.on("viewer-config", (cfg) => {
+        if (typeof cfg?.insetY === "number")
+          document.documentElement.style.setProperty(
+            "--inset-y",
+            `${cfg.insetY}px`,
+          );
+        if (typeof cfg?.sideMargin === "number")
+          document.documentElement.style.setProperty(
+            "--side-margin",
+            `${cfg.sideMargin}px`,
+          );
+        if (typeof cfg?.pageGap === "number")
+          document.documentElement.style.setProperty(
+            "--page-gap",
+            `${cfg.pageGap}px`,
+          );
       });
 
-      // Listen for PDF reload events
-      ipcRenderer.on("reload-pdf", (event, pdfPath) => {
-        // Store scroll position if possible
-        let scrollPos = 0;
-        try {
-          const frameWindow = pdfFrame.contentWindow;
-          if (frameWindow) {
-            scrollPos = frameWindow.scrollY || 0;
-          }
-        } catch (e) {}
-
-        // Reload
-        loadPdf(pdfPath);
-
-        // Restore scroll position
-        if (scrollPos > 0) {
-          setTimeout(() => {
-            try {
-              const frameWindow = pdfFrame.contentWindow;
-              if (frameWindow) {
-                frameWindow.scrollTo(0, scrollPos);
-              }
-            } catch (e) {}
-          }, 500);
+      async function openPdf(localPath) {
+        if (typeof localPath !== "string" || !localPath.trim()) {
+          console.warn("[pdfview] openPdf called without a path");
+          return;
         }
-      });
+        const p = localPath.trim().replace(/\\/g, "/");
+        const url = p.startsWith("file://") ? p : `file://${p}`;
 
-      // Drag and drop
-      document.addEventListener("dragover", (e) => {
-        e.preventDefault();
-        dropZone.classList.add("active", "dragging");
-      });
+        const loadingTask = pdfjsLib.getDocument({
+          url,
+          cMapUrl: new URL(
+            "./node_modules/pdfjs-dist/cmaps/",
+            import.meta.url,
+          ).toString(),
+          cMapPacked: true,
+          standardFontDataUrl: new URL(
+            "./node_modules/pdfjs-dist/standard_fonts/",
+            import.meta.url,
+          ).toString(),
+        });
 
-      document.addEventListener("dragleave", (e) => {
-        if (!e.relatedTarget) {
-          dropZone.classList.remove("dragging");
-        }
-      });
-
-      document.addEventListener("drop", (e) => {
-        e.preventDefault();
-        dropZone.classList.remove("dragging");
-
-        const file = e.dataTransfer.files[0];
-        if (file && file.type === "application/pdf") {
-          loadPdf(file.path);
-          ipcRenderer.send("load-new-pdf", file.path);
-        } else {
-          dropZone.classList.remove("active");
-        }
-      });
-
-      // Show drop zone if no PDF loaded
-      if (!currentPdfPath) {
-        dropZone.classList.add("active");
+        const pdfDocument = await loadingTask.promise;
+        pdfViewer.setDocument(pdfDocument);
+        linkService.setDocument(pdfDocument, null);
       }
+
+      ipcRenderer.on("load-pdf", (pdfPath) => openPdf(pdfPath));
+      ipcRenderer.on("reload-pdf", (pdfPath) => {
+        if (!pdfPath) return;
+        const scrollTop = container.scrollTop;
+        openPdf(pdfPath).then(() => {
+          container.scrollTop = scrollTop;
+        });
+      });
+
+      const ZOOM_STEPS = [
+        0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.7, 2, 2.2, 2.4, 2.6, 3, 3.5,
+        4, 5,
+      ];
+
+      function nearestStepIndex(scale) {
+        let best = 0,
+          bestErr = Infinity;
+        for (let i = 0; i < ZOOM_STEPS.length; i++) {
+          const err = Math.abs(ZOOM_STEPS[i] - scale);
+          if (err < bestErr) {
+            best = i;
+            bestErr = err;
+          }
+        }
+        return best;
+      }
+      function stepScale(current, direction) {
+        const i = nearestStepIndex(current);
+        let next =
+          direction > 0
+            ? Math.min(i + 1, ZOOM_STEPS.length - 1)
+            : Math.max(i - 1, 0);
+        return ZOOM_STEPS[next];
+      }
+      function setScaleKeepingPointer(cx, cy, newScale) {
+        const prev = pdfViewer.currentScale || 1;
+        if (newScale === prev) return;
+        const rect = container.getBoundingClientRect();
+        const px = container.scrollLeft + (cx - rect.left);
+        const py = container.scrollTop + (cy - rect.top);
+        const k = newScale / prev;
+        pdfViewer.currentScale = newScale;
+        // Adjust scroll so the pointer stays over the same content
+        requestAnimationFrame(() => {
+          container.scrollLeft = px * k - (cx - rect.left);
+          container.scrollTop = py * k - (cy - rect.top);
+        });
+      }
+
+      // Trackpad pinch in Chromium → wheel event with ctrlKey=true (or metaKey on macOS)
+      let wheelRaf = 0;
+      container.addEventListener(
+        "wheel",
+        (e) => {
+          const isZoomGesture = e.ctrlKey || e.metaKey;
+          if (!isZoomGesture) return; // let normal scrolling happen
+          e.preventDefault(); // we handle zoom ourselves (crisp)
+          if (wheelRaf) cancelAnimationFrame(wheelRaf);
+          wheelRaf = requestAnimationFrame(() => {
+            const dir = e.deltaY > 0 ? -1 : 1; // natural swipe ↑ to zoom in
+            const target = stepScale(pdfViewer.currentScale || 1, dir);
+            setScaleKeepingPointer(e.clientX, e.clientY, target);
+          });
+        },
+        { passive: false },
+      );
+
+      // Keyboard zoom (no on-screen UI)
+      document.addEventListener("keydown", (e) => {
+        const mod = e.metaKey || e.ctrlKey;
+        if (!mod) return;
+        if (e.key === "=" || e.key === "+") {
+          // zoom in
+          e.preventDefault();
+          const rect = container.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const target = stepScale(pdfViewer.currentScale || 1, +1);
+          setScaleKeepingPointer(cx, cy, target);
+        } else if (e.key === "-") {
+          // zoom out
+          e.preventDefault();
+          const rect = container.getBoundingClientRect();
+          const cx = rect.left + rect.width / 2;
+          const cy = rect.top + rect.height / 2;
+          const target = stepScale(pdfViewer.currentScale || 1, -1);
+          setScaleKeepingPointer(cx, cy, target);
+        } else if (e.key === "0") {
+          // reset
+          e.preventDefault();
+          const rect = container.getBoundingClientRect();
+          setScaleKeepingPointer(
+            rect.left + rect.width / 2,
+            rect.top + rect.height / 2,
+            1,
+          );
+        }
+      });
+      // ---------------------------------------------------------
+
+      // Quit shortcuts
+      document.addEventListener("keydown", (e) => {
+        if (
+          ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "q") ||
+          e.key === "Escape"
+        ) {
+          ipcRenderer.send("close-window");
+        }
+      });
     </script>
   </body>
 </html>
