@@ -26,6 +26,7 @@
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
+    "chokidar": "^4.0.3",
     "pdfjs-dist": "^5.4.149"
   },
   "bin": {

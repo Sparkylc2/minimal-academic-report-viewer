@@ -6,6 +6,25 @@ app.commandLine.appendSwitch("disable-pinch");
 let mainWindow;
 let watcher;
 
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+  process.exit(0);
+} else {
+  app.on("second-instance", (_event, argv2 /*, workingDir */) => {
+    const newPdf = resolvePdfArg(argv2.slice(1));
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+    if (newPdf && fs.existsSync(newPdf)) {
+      pdfPath = newPdf;
+      watchFile(newPdf);
+      reloadPdf();
+    }
+  });
+}
 const argv = process.argv.slice(1);
 
 function parseNumberFlag(name, def) {
@@ -113,17 +132,20 @@ function reloadPdf() {
   }
 }
 
+const chokidar = require("chokidar");
+
 function watchFile(filePath) {
   if (watcher) watcher.close();
-  let debounce;
-  watcher = fs.watch(filePath, (eventType) => {
-    if (eventType === "change") {
-      clearTimeout(debounce);
-      debounce = setTimeout(reloadPdf, 200);
-    }
+  watcher = chokidar.watch(filePath, {
+    persistent: true,
+    awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+    ignoreInitial: true,
   });
+  watcher
+    .on("add", reloadPdf)
+    .on("change", reloadPdf)
+    .on("unlink", () => {});
 }
-
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {

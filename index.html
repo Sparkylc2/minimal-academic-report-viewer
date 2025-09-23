@@ -163,6 +163,66 @@
         if (typeof cfg?.fit === "string") pendingFit = cfg.fit;
       });
 
+      function getViewState() {
+        const scale = pdfViewer.currentScale || 1;
+
+        const pages = viewerEl.querySelectorAll(".page");
+        const viewport = container.getBoundingClientRect();
+        let topPage = null,
+          topY = Infinity;
+
+        for (const p of pages) {
+          const r = p.getBoundingClientRect();
+          const dist = Math.abs(r.top - viewport.top);
+          if (dist < topY) {
+            topY = dist;
+            topPage = p;
+          }
+        }
+
+        let pageNumber = pdfViewer.currentPageNumber || 1;
+        let relY = 0,
+          relX = 0;
+
+        if (topPage) {
+          pageNumber =
+            Number(topPage.getAttribute("data-page-number")) || pageNumber;
+          const r = topPage.getBoundingClientRect();
+          relY = (viewport.top - r.top) / Math.max(1, r.height);
+          relX = (viewport.left - r.left) / Math.max(1, r.width);
+          relY = Math.max(0, Math.min(1, relY));
+          relX = Math.max(0, Math.min(1, relX));
+        }
+
+        return { scale, pageNumber, relX, relY };
+      }
+
+      async function restoreViewState({ scale, pageNumber, relX, relY }) {
+        if (typeof scale === "number" && scale > 0) {
+          pdfViewer.currentScale = scale;
+        }
+        if (pageNumber) {
+          pdfViewer.currentPageNumber = pageNumber;
+        }
+
+        await new Promise((r) =>
+          requestAnimationFrame(() => requestAnimationFrame(r)),
+        );
+
+        const pageView = pdfViewer._pages?.[pageNumber - 1];
+        if (!pageView) return;
+        const pageEl = pageView.div;
+
+        const rect = pageEl.getBoundingClientRect();
+        const pageTop = pageEl.offsetTop;
+        const pageLeft = pageEl.offsetLeft;
+
+        const targetTop = pageTop + (relY ?? 0) * Math.max(1, rect.height);
+        const targetLeft = pageLeft + (relX ?? 0) * Math.max(1, rect.width);
+
+        container.scrollTop = targetTop;
+        container.scrollLeft = targetLeft;
+      }
       function applyInitialFit() {
         if (pendingFit === "width") pdfViewer.currentScaleValue = "page-width";
         else if (pendingFit === "height")
@@ -198,9 +258,15 @@
       ipcRenderer.on("load-pdf", (pdfPath) => openPdf(pdfPath));
       ipcRenderer.on("reload-pdf", (pdfPath) => {
         if (!pdfPath) return;
-        const scrollTop = container.scrollTop;
+
+        const state = getViewState();
+
         openPdf(pdfPath).then(() => {
-          container.scrollTop = scrollTop;
+          const onInit = () => {
+            eventBus.off("pagesinit", onInit);
+            restoreViewState(state);
+          };
+          eventBus.on("pagesinit", onInit);
         });
       });
 
