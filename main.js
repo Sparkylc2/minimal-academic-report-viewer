@@ -152,6 +152,10 @@ app.on("window-all-closed", () => {
   if (watcher) watcher.close();
   if (process.platform !== "darwin") app.quit();
 });
+ipcMain.on("close-window", () => {
+  if (watcher) watcher.close();
+  app.quit();
+});
 
 app.on("activate", () => {
   if (BrowserWindow.getAllWindows().length === 0) createWindow();
