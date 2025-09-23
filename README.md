@@ -56,5 +56,5 @@ When using this with neovim, you can use the following set up. I havent tested t
         vim.g.vimtex_compiler_latexmk_engines = { _ = "-xelatex" }
         vim.g.vimtex_bibliography_autoload = { filenames = { "**/bibliography/*.bib" } }
     end,
-   },
+},
 ```
