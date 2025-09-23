@@ -5,10 +5,8 @@ const fs = require("fs");
 let mainWindow;
 let watcher;
 
-// Read ALL argv (safer across Electron launch modes). We'll just pick the .pdf.
 const argv = process.argv.slice(1);
 
-// --- CLI flags (unchanged) ---
 function parseNumberFlag(name, def) {
   const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
   if (withEq) {
@@ -23,13 +21,28 @@ function parseNumberFlag(name, def) {
   return def;
 }
 
+function parseEnumFlag(name, allowed, def) {
+  const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
+  if (withEq) {
+    const val = withEq.split("=")[1];
+    if (allowed.has(val)) return val;
+  }
+  const i = argv.indexOf(`--${name}`);
+  if (i !== -1) {
+    const val = argv[i + 1];
+    if (allowed.has(val)) return val;
+  }
+  return def;
+}
+
 const viewerConfig = {
-  insetY: parseNumberFlag("inset", 24),
-  sideMargin: parseNumberFlag("sideMargin", 24),
+  insetY: parseNumberFlag("inset", 0),
+  sideMargin: parseNumberFlag("sideMargin", 0),
   pageGap: parseNumberFlag("pageGap", 12),
+  pageRadius: parseNumberFlag("pageRadius", 8),
+  fit: parseEnumFlag("fit", new Set(["width", "height", "auto"]), null),
 };
 
-// --- robustly pick the first .pdf argument ---
 function resolvePdfArg(args) {
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;

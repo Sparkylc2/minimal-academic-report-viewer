@@ -13,6 +13,7 @@
         --side-margin: 0px; /* left/right margin around pages */
         --page-gap: 64px; /* vertical gap between pages */
         --bg: #181616;
+        --page-radius: 8px;
       }
       * {
         box-sizing: border-box;
@@ -46,15 +47,22 @@
       #viewer {
         background: var(--bg) !important;
       }
+      .pdfViewer .page,
+      .pdfViewer .page .canvasWrapper,
+      .pdfViewer .page canvas,
+      .pdfViewer .page .textLayer,
+      .pdfViewer .page .annotationLayer {
+        border-radius: var(--page-radius);
+      }
       .pdfViewer .page {
         margin: 0 auto var(--page-gap) auto !important;
         box-shadow: none !important;
         border: none !important;
         background: #fff;
         border-radius: 8px;
+        overflow: hidden;
       }
-
-      [class*="toolbar"],
+      false [class*="toolbar"],
       [id*="toolbar"],
       #secondaryToolbar,
       #overlayContainer,
@@ -103,7 +111,7 @@
         viewer: viewerEl,
         eventBus,
         linkService,
-        useOnlyCssZoom: true,
+        useOnlyCssZoom: false,
         textLayerMode: 2,
         annotationMode: 2,
         enableScripting: false,
@@ -126,6 +134,11 @@
           document.documentElement.style.setProperty(
             "--page-gap",
             `${cfg.pageGap}px`,
+          );
+        if (typeof cfg?.pageRadius === "number")
+          document.documentElement.style.setProperty(
+            "--page-radius",
+            `${cfg.pageRadius}px`,
           );
       });
 
@@ -164,31 +177,66 @@
         });
       });
 
-      const ZOOM_STEPS = [
-        0.5, 0.67, 0.8, 0.9, 1, 1.1, 1.25, 1.5, 1.7, 2, 2.2, 2.4, 2.6, 3, 3.5,
-        4, 5,
-      ];
+      const MIN_SCALE = 0.4;
+      const MAX_SCALE = 6;
+      const ZOOM_INTENSITY = 0.02;
 
-      function nearestStepIndex(scale) {
-        let best = 0,
-          bestErr = Infinity;
-        for (let i = 0; i < ZOOM_STEPS.length; i++) {
-          const err = Math.abs(ZOOM_STEPS[i] - scale);
-          if (err < bestErr) {
-            best = i;
-            bestErr = err;
-          }
-        }
-        return best;
+      let pinchActive = false;
+      let committedScale = 1;
+      let cssScale = 1;
+      let wheelAccum = 0;
+      let wheelRAF = 0;
+      let pinchEndTimer = 0;
+      let lastPointer = { x: 0, y: 0 };
+
+      function beginPinch() {
+        if (pinchActive) return;
+        pinchActive = true;
+        committedScale = pdfViewer.currentScale || 1;
+        cssScale = committedScale;
+        viewerEl.style.willChange = "transform";
       }
-      function stepScale(current, direction) {
-        const i = nearestStepIndex(current);
-        let next =
-          direction > 0
-            ? Math.min(i + 1, ZOOM_STEPS.length - 1)
-            : Math.max(i - 1, 0);
-        return ZOOM_STEPS[next];
+
+      function endPinch() {
+        if (!pinchActive) return;
+        pinchActive = false;
+
+        // Compute the exact target scroll to keep the point under the cursor
+        // fixed when transitioning from CSS-zoomed layout -> re-rendered layout.
+        const targetScale = cssScale || pdfViewer.currentScale || 1;
+        const rect = container.getBoundingClientRect();
+        const dx = lastPointer.x - rect.left;
+        const dy = lastPointer.y - rect.top;
+        const px = container.scrollLeft + dx; // content-space coords under pointer
+        const py = container.scrollTop + dy;
+        const k = targetScale / (committedScale || 1);
+        const targetScrollLeft = px * k - dx;
+        const targetScrollTop = py * k - dy;
+
+        // 1) Trigger the real pdf.js scale (layout + re-render) **while**
+        //    the CSS transform is still applied to avoid a visible jump.
+        pdfViewer.useOnlyCssZoom = false;
+        pdfViewer.currentScale = targetScale;
+        container.scrollLeft = targetScrollLeft;
+        container.scrollTop = targetScrollTop;
+
+        // 2) On the next frames, drop the temp CSS transform and re-apply
+        //    the same scroll once layout has settled. This eliminates the
+        //    tiny "snap" at the end of the gesture.
+        requestAnimationFrame(() => {
+          viewerEl.style.transform = "";
+          viewerEl.style.transformOrigin = "";
+          viewerEl.style.willChange = "";
+          requestAnimationFrame(() => {
+            container.scrollLeft = targetScrollLeft;
+            container.scrollTop = targetScrollTop;
+          });
+        });
       }
+      function clamp(v, a, b) {
+        return Math.max(a, Math.min(b, v));
+      }
+
       function setScaleKeepingPointer(cx, cy, newScale) {
         const prev = pdfViewer.currentScale || 1;
         if (newScale === prev) return;
@@ -197,65 +245,80 @@
         const py = container.scrollTop + (cy - rect.top);
         const k = newScale / prev;
         pdfViewer.currentScale = newScale;
-        // Adjust scroll so the pointer stays over the same content
         requestAnimationFrame(() => {
           container.scrollLeft = px * k - (cx - rect.left);
           container.scrollTop = py * k - (cy - rect.top);
         });
       }
 
-      // Trackpad pinch in Chromium → wheel event with ctrlKey=true (or metaKey on macOS)
-      let wheelRaf = 0;
       container.addEventListener(
         "wheel",
         (e) => {
           const isZoomGesture = e.ctrlKey || e.metaKey;
-          if (!isZoomGesture) return; // let normal scrolling happen
-          e.preventDefault(); // we handle zoom ourselves (crisp)
-          if (wheelRaf) cancelAnimationFrame(wheelRaf);
-          wheelRaf = requestAnimationFrame(() => {
-            const dir = e.deltaY > 0 ? -1 : 1; // natural swipe ↑ to zoom in
-            const target = stepScale(pdfViewer.currentScale || 1, dir);
-            setScaleKeepingPointer(e.clientX, e.clientY, target);
-          });
+          if (!isZoomGesture) return;
+          e.preventDefault();
+
+          beginPinch();
+
+          const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 800 : 1;
+          wheelAccum += e.deltaY * unit;
+          lastPointer.x = e.clientX;
+          lastPointer.y = e.clientY;
+
+          if (!wheelRAF) {
+            wheelRAF = requestAnimationFrame(() => {
+              const factor = Math.exp(-wheelAccum * ZOOM_INTENSITY);
+              const target = clamp(
+                (cssScale || committedScale) * factor,
+                MIN_SCALE,
+                MAX_SCALE,
+              );
+
+              const rect = container.getBoundingClientRect();
+              const originX =
+                container.scrollLeft + (lastPointer.x - rect.left);
+              const originY = container.scrollTop + (lastPointer.y - rect.top);
+              const cssMultiplier = target / committedScale;
+              viewerEl.style.transformOrigin = `${originX}px ${originY}px`;
+              viewerEl.style.transform = `scale(${cssMultiplier})`;
+              cssScale = target;
+
+              wheelAccum = 0;
+              wheelRAF = 0;
+            });
+          }
+
+          clearTimeout(pinchEndTimer);
+          pinchEndTimer = setTimeout(endPinch, 120);
         },
         { passive: false },
       );
-
-      // Keyboard zoom (no on-screen UI)
       document.addEventListener("keydown", (e) => {
         const mod = e.metaKey || e.ctrlKey;
         if (!mod) return;
+        const rect = container.getBoundingClientRect();
+        const cx = rect.left + rect.width / 2;
+        const cy = rect.top + rect.height / 2;
         if (e.key === "=" || e.key === "+") {
-          // zoom in
           e.preventDefault();
-          const rect = container.getBoundingClientRect();
-          const cx = rect.left + rect.width / 2;
-          const cy = rect.top + rect.height / 2;
-          const target = stepScale(pdfViewer.currentScale || 1, +1);
-          setScaleKeepingPointer(cx, cy, target);
-        } else if (e.key === "-") {
-          // zoom out
-          e.preventDefault();
-          const rect = container.getBoundingClientRect();
-          const cx = rect.left + rect.width / 2;
-          const cy = rect.top + rect.height / 2;
-          const target = stepScale(pdfViewer.currentScale || 1, -1);
-          setScaleKeepingPointer(cx, cy, target);
-        } else if (e.key === "0") {
-          // reset
-          e.preventDefault();
-          const rect = container.getBoundingClientRect();
           setScaleKeepingPointer(
-            rect.left + rect.width / 2,
-            rect.top + rect.height / 2,
-            1,
+            cx,
+            cy,
+            clamp((pdfViewer.currentScale || 1) * 1.1, MIN_SCALE, MAX_SCALE),
           );
+        } else if (e.key === "-") {
+          e.preventDefault();
+          setScaleKeepingPointer(
+            cx,
+            cy,
+            clamp((pdfViewer.currentScale || 1) / 1.1, MIN_SCALE, MAX_SCALE),
+          );
+        } else if (e.key === "0") {
+          e.preventDefault();
+          setScaleKeepingPointer(cx, cy, 1);
         }
       });
-      // ---------------------------------------------------------
 
-      // Quit shortcuts
       document.addEventListener("keydown", (e) => {
         if (
           ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "q") ||
