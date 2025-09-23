@@ -2,11 +2,14 @@ const { app, BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
 
+app.commandLine.appendSwitch("disable-pinch");
 let mainWindow;
 let watcher;
 
+// Read all argv; we’ll pick the .pdf and flags from here.
 const argv = process.argv.slice(1);
 
+// ---------------- CLI flags ----------------
 function parseNumberFlag(name, def) {
   const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
   if (withEq) {
@@ -20,7 +23,6 @@ function parseNumberFlag(name, def) {
   }
   return def;
 }
-
 function parseEnumFlag(name, allowed, def) {
   const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
   if (withEq) {
@@ -34,15 +36,23 @@ function parseEnumFlag(name, allowed, def) {
   }
   return def;
 }
+function parseStringFlag(name, def) {
+  const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
+  if (withEq) return withEq.split("=").slice(1).join("=") || def;
+  const i = argv.indexOf(`--${name}`);
+  if (i !== -1) return argv[i + 1] || def;
+  return def;
+}
 
+// Keep only what you asked for
 const viewerConfig = {
-  insetY: parseNumberFlag("inset", 0),
-  sideMargin: parseNumberFlag("sideMargin", 0),
-  pageGap: parseNumberFlag("pageGap", 12),
+  pageGap: parseNumberFlag("pageGap", 16),
   pageRadius: parseNumberFlag("pageRadius", 8),
-  fit: parseEnumFlag("fit", new Set(["width", "height", "auto"]), null),
+  fit: parseEnumFlag("fit", new Set(["width", "height", "auto"]), "auto"),
+  bg: parseStringFlag("bg", "#181616"),
 };
 
+// Pick the first .pdf argument
 function resolvePdfArg(args) {
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
@@ -57,7 +67,6 @@ function resolvePdfArg(args) {
   }
   return null;
 }
-
 let pdfPath = resolvePdfArg(argv);
 
 function createWindow() {
@@ -66,7 +75,7 @@ function createWindow() {
     height: 1200,
     frame: false,
     transparent: true,
-    backgroundColor: "transparent",
+    backgroundColor: (viewerConfig && viewerConfig.bg) || "#181616",
     titleBarStyle: "customButtonsOnHover",
     hasShadow: false,
     webPreferences: {
@@ -76,6 +85,12 @@ function createWindow() {
     },
   });
 
+  mainWindow.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
+  if (mainWindow.webContents.setLayoutZoomLevelLimits) {
+    mainWindow.webContents.setLayoutZoomLevelLimits(0, 0);
+  }
+
+  // Disable browser bitmap zoom; we implement true pdf.js zoom in the renderer.
   mainWindow.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
 
   mainWindow.setTitle("PDF Viewer");
@@ -97,17 +112,19 @@ function createWindow() {
   });
 }
 
+function reloadPdf() {
+  if (pdfPath && mainWindow && !mainWindow.isDestroyed()) {
+    mainWindow.webContents.send("reload-pdf", pdfPath);
+  }
+}
+
 function watchFile(filePath) {
   if (watcher) watcher.close();
   let debounce;
   watcher = fs.watch(filePath, (eventType) => {
     if (eventType === "change") {
       clearTimeout(debounce);
-      debounce = setTimeout(() => {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-          mainWindow.webContents.send("reload-pdf", filePath);
-        }
-      }, 200);
+      debounce = setTimeout(reloadPdf, 200);
     }
   });
 }
@@ -127,8 +144,6 @@ ipcMain.on("load-new-pdf", (_event, newPath) => {
   if (typeof newPath === "string" && fs.existsSync(newPath)) {
     pdfPath = newPath;
     watchFile(newPath);
-    if (mainWindow && !mainWindow.isDestroyed()) {
-      mainWindow.webContents.send("load-pdf", newPath);
-    }
+    reloadPdf();
   }
 });

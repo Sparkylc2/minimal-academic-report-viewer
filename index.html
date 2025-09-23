@@ -2,22 +2,22 @@
 <html>
   <head>
     <meta charset="UTF-8" />
-    <title>PDF Viewer (minimal)</title>
+    <title>PDF Viewer (pdf.js)</title>
     <link
       rel="stylesheet"
       href="./node_modules/pdfjs-dist/web/pdf_viewer.css"
     />
     <style>
       :root {
-        --inset-y: 0px; /* top & bottom inset INSIDE the scroll area */
-        --side-margin: 0px; /* left/right margin around pages */
-        --page-gap: 64px; /* vertical gap between pages */
-        --bg: #181616;
-        --page-radius: 8px;
+        --bg: #181616; /* set from CLI (--bg), default above */
+        --page-gap: 32px; /* set from CLI (--pageGap) */
+        --page-radius: 8px; /* set from CLI (--pageRadius) */
       }
+
       * {
         box-sizing: border-box;
       }
+
       html,
       body {
         margin: 0;
@@ -25,28 +25,38 @@
         width: 100%;
         height: 100%;
         overflow: hidden;
-        background: transparent;
+        background: transparent; /* window is transparent; we paint bg on container */
         -webkit-user-select: none;
+        overscroll-behavior: contain;
+        touch-action: none;
       }
+
+      /* Scroll container */
       #viewerContainer {
         position: fixed;
         inset: 0;
         overflow: auto;
-        padding: var(--inset-y) var(--side-margin);
         background: var(--bg);
         overscroll-behavior-y: contain;
         scrollbar-gutter: stable both-edges;
         -webkit-overflow-scrolling: touch;
-        scrollbar-width: none;
+        scrollbar-width: none; /* Firefox */
+        /* IMPORTANT: stop Chromium's scroll anchoring from nudging the view during reflow */
+        overflow-anchor: none;
       }
+      /* Hide scrollbars (Chromium/WebKit) */
       #viewerContainer::-webkit-scrollbar {
         width: 0;
         height: 0;
         display: none;
       }
+
+      /* The viewer itself should inherit bg to avoid flashes */
       #viewer {
         background: var(--bg) !important;
       }
+
+      /* Rounded pages + clip all layers, with vertical gap */
       .pdfViewer .page,
       .pdfViewer .page .canvasWrapper,
       .pdfViewer .page canvas,
@@ -58,16 +68,29 @@
         margin: 0 auto var(--page-gap) auto !important;
         box-shadow: none !important;
         border: none !important;
-        background: #fff;
-        border-radius: 8px;
-        overflow: hidden;
+        background: #ffffff;
+        overflow: hidden; /* clip overlays to rounded corners */
       }
-      false [class*="toolbar"],
+
+      /* Hide any toolbars/sidebars if the css from web/pdf_viewer.css exposes them */
+      [class*="toolbar"],
       [id*="toolbar"],
       #secondaryToolbar,
       #overlayContainer,
       #sidebarContainer {
         display: none !important;
+      }
+
+      /* Freeze overlay that shows the *previous* frame during the scale commit */
+      #freezeOverlay {
+        position: fixed;
+        inset: 0;
+        pointer-events: none;
+        z-index: 2147483647;
+        opacity: 1;
+        transition: opacity 120ms ease;
+        will-change: transform, opacity;
+        background: transparent;
       }
     </style>
   </head>
@@ -76,6 +99,7 @@
       <div id="viewer" class="pdfViewer"></div>
     </div>
 
+    <!-- safe polyfill for older engines -->
     <script>
       if (!Promise.withResolvers) {
         Promise.withResolvers = function () {
@@ -93,6 +117,7 @@
       import * as pdfjsLib from "./node_modules/pdfjs-dist/build/pdf.mjs";
       import * as pdfjsViewer from "./node_modules/pdfjs-dist/web/pdf_viewer.mjs";
 
+      // Worker
       pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
         "./node_modules/pdfjs-dist/build/pdf.worker.mjs",
         import.meta.url,
@@ -100,7 +125,6 @@
 
       const container = document.getElementById("viewerContainer");
       const viewerEl = document.getElementById("viewer");
-
       const { ipcRenderer } = window.electron;
 
       const eventBus = new pdfjsViewer.EventBus();
@@ -111,37 +135,43 @@
         viewer: viewerEl,
         eventBus,
         linkService,
-        useOnlyCssZoom: false,
         textLayerMode: 2,
         annotationMode: 2,
+        useOnlyCssZoom: false, // we do CSS preview, but commit via real scale
         enableScripting: false,
         l10n: pdfjsViewer.NullL10n,
       });
       linkService.setViewer(pdfViewer);
 
+      // --- Apply CLI config: bg, page gap/radius, initial fit ---
+      let pendingFit = "auto";
       ipcRenderer.on("viewer-config", (cfg) => {
-        if (typeof cfg?.insetY === "number")
-          document.documentElement.style.setProperty(
-            "--inset-y",
-            `${cfg.insetY}px`,
-          );
-        if (typeof cfg?.sideMargin === "number")
-          document.documentElement.style.setProperty(
-            "--side-margin",
-            `${cfg.sideMargin}px`,
-          );
-        if (typeof cfg?.pageGap === "number")
+        if (typeof cfg?.bg === "string") {
+          document.documentElement.style.setProperty("--bg", cfg.bg);
+        }
+        if (typeof cfg?.pageGap === "number") {
           document.documentElement.style.setProperty(
             "--page-gap",
             `${cfg.pageGap}px`,
           );
-        if (typeof cfg?.pageRadius === "number")
+        }
+        if (typeof cfg?.pageRadius === "number") {
           document.documentElement.style.setProperty(
             "--page-radius",
             `${cfg.pageRadius}px`,
           );
+        }
+        if (typeof cfg?.fit === "string") pendingFit = cfg.fit;
       });
 
+      function applyInitialFit() {
+        if (pendingFit === "width") pdfViewer.currentScaleValue = "page-width";
+        else if (pendingFit === "height")
+          pdfViewer.currentScaleValue = "page-fit";
+        else pdfViewer.currentScaleValue = "auto";
+      }
+
+      // --- Load/Reload PDFs ---
       async function openPdf(localPath) {
         if (typeof localPath !== "string" || !localPath.trim()) {
           console.warn("[pdfview] openPdf called without a path");
@@ -177,9 +207,14 @@
         });
       });
 
+      eventBus.on("pagesinit", () => {
+        applyInitialFit();
+      });
+
+      // ---------------- Smooth pinch zoom (CSS-first preview, frozen-frame commit) ----------------
       const MIN_SCALE = 0.4;
       const MAX_SCALE = 6;
-      const ZOOM_INTENSITY = 0.02;
+      const ZOOM_INTENSITY = 0.018; // ↑ faster, ↓ slower
 
       let pinchActive = false;
       let committedScale = 1;
@@ -189,6 +224,21 @@
       let pinchEndTimer = 0;
       let lastPointer = { x: 0, y: 0 };
 
+      // Prevent UA visual pinch/gesture from racing our zoom
+      window.addEventListener(
+        "wheel",
+        (e) => {
+          if (e.ctrlKey || e.metaKey) e.preventDefault();
+        },
+        { passive: false, capture: true },
+      );
+      ["gesturestart", "gesturechange", "gestureend"].forEach((t) => {
+        window.addEventListener(t, (e) => e.preventDefault(), {
+          passive: false,
+          capture: true,
+        });
+      });
+
       function beginPinch() {
         if (pinchActive) return;
         pinchActive = true;
@@ -197,92 +247,187 @@
         viewerEl.style.willChange = "transform";
       }
 
+      // Find the page under the pointer and the relative (0..1) position on it
+      function probePageAtClientPoint(clientX, clientY) {
+        const el = document.elementFromPoint(clientX, clientY);
+        const pageEl = el && el.closest ? el.closest(".page") : null;
+        if (!pageEl) return null;
+        const rect = pageEl.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const relX = (clientX - rect.left) / rect.width;
+        const relY = (clientY - rect.top) / rect.height;
+        const pageNo = pageEl.getAttribute("data-page-number");
+        return { pageNo, relX, relY };
+      }
+
+      /** Build an overlay that shows exactly what was on screen the previous frame. */
+      function makeFreezeOverlayFromVisibleCanvases() {
+        const overlay = document.createElement("div");
+        overlay.id = "freezeOverlay";
+
+        const viewport = container.getBoundingClientRect();
+        // only capture canvases that intersect the viewport (plus a small margin)
+        const margin = 50;
+        const topBound = viewport.top - margin;
+        const bottomBound = viewport.bottom + margin;
+
+        const canvases = viewerEl.querySelectorAll(".page canvas");
+        for (const canvas of canvases) {
+          const r = canvas.getBoundingClientRect();
+          if (r.bottom < topBound || r.top > bottomBound) continue; // skip non-visible
+          try {
+            const url = canvas.toDataURL("image/png");
+            const img = new Image();
+            img.decoding = "sync";
+            img.loading = "eager";
+            img.src = url;
+            img.style.position = "absolute";
+            img.style.left = `${r.left}px`;
+            img.style.top = `${r.top}px`;
+            img.style.width = `${r.width}px`;
+            img.style.height = `${r.height}px`;
+            overlay.appendChild(img);
+          } catch {
+            // If a canvas can't be serialized (shouldn't happen locally), skip it.
+          }
+        }
+        document.body.appendChild(overlay);
+        overlay.getBoundingClientRect(); // paint now
+        return overlay;
+      }
+
+      function removeFreezeOverlay(overlay) {
+        if (!overlay) return;
+        overlay.style.opacity = "0";
+        setTimeout(() => overlay.remove(), 130);
+      }
+
+      /* --------- TEMP SCROLL PIN: block pdf.js / UA scroll anchoring during commit --------- */
+      let commitLock = false;
+      let plannedLeft = 0,
+        plannedTop = 0;
+      function onLockedScroll(e) {
+        if (!commitLock) return;
+        // Keep the viewport exactly where we planned while pdf.js reflows/rerenders
+        if (container.scrollLeft !== plannedLeft)
+          container.scrollLeft = plannedLeft;
+        if (container.scrollTop !== plannedTop)
+          container.scrollTop = plannedTop;
+      }
+      container.addEventListener("scroll", onLockedScroll, { passive: true });
+      /* -------------------------------------------------------------------------------------- */
+
       function endPinch() {
         if (!pinchActive) return;
         pinchActive = false;
 
-        // Compute the exact target scroll to keep the point under the cursor
-        // fixed when transitioning from CSS-zoomed layout -> re-rendered layout.
-        const targetScale = cssScale || pdfViewer.currentScale || 1;
+        const targetScale = Math.max(
+          MIN_SCALE,
+          Math.min(MAX_SCALE, cssScale || 1),
+        );
+        const anchor = probePageAtClientPoint(lastPointer.x, lastPointer.y);
+
+        // 1) Freeze what the user currently sees (prevents any jarring rogue frame)
+        const overlay = makeFreezeOverlayFromVisibleCanvases();
+
+        // 2) Compute the exact scroll position we want *after* the scale commits
         const rect = container.getBoundingClientRect();
-        const dx = lastPointer.x - rect.left;
-        const dy = lastPointer.y - rect.top;
-        const px = container.scrollLeft + dx; // content-space coords under pointer
-        const py = container.scrollTop + dy;
+        const cx = lastPointer.x - rect.left;
+        const cy = lastPointer.y - rect.top;
+        const px = container.scrollLeft + cx;
+        const py = container.scrollTop + cy;
         const k = targetScale / (committedScale || 1);
-        const targetScrollLeft = px * k - dx;
-        const targetScrollTop = py * k - dy;
+        plannedLeft = px * k - cx;
+        plannedTop = py * k - cy;
 
-        // 1) Trigger the real pdf.js scale (layout + re-render) **while**
-        //    the CSS transform is still applied to avoid a visible jump.
-        pdfViewer.useOnlyCssZoom = false;
+        // 3) Lock scroll to those coordinates until pdf.js finishes updating
+        commitLock = true;
+
+        // 4) Remove CSS preview AFTER overlay is visible (user keeps seeing old frame)
+        viewerEl.style.transform = "";
+        viewerEl.style.transformOrigin = "";
+        viewerEl.style.willChange = "";
+
+        // 5) Commit crisp scale (pdf.js will lay out & re-render)
         pdfViewer.currentScale = targetScale;
-        container.scrollLeft = targetScrollLeft;
-        container.scrollTop = targetScrollTop;
 
-        // 2) On the next frames, drop the temp CSS transform and re-apply
-        //    the same scroll once layout has settled. This eliminates the
-        //    tiny "snap" at the end of the gesture.
-        requestAnimationFrame(() => {
-          viewerEl.style.transform = "";
-          viewerEl.style.transformOrigin = "";
-          viewerEl.style.willChange = "";
+        // 6) Apply planned scroll immediately; lock keeps it from drifting
+        container.scrollLeft = plannedLeft;
+        container.scrollTop = plannedTop;
+
+        // 7) When view updates, optionally refine using page anchor, then release lock & overlay
+        let finished = false;
+        const finalize = () => {
+          if (finished) return;
+          finished = true;
+          eventBus.off("updateviewarea", finalize);
+
+          // If we can find the same page under the pointer, do a last, tiny correction
+          if (anchor && anchor.pageNo) {
+            const pageEl2 = viewerEl.querySelector(
+              `.page[data-page-number="${anchor.pageNo}"]`,
+            );
+            if (pageEl2) {
+              const r2 = pageEl2.getBoundingClientRect();
+              const wantX = r2.left + anchor.relX * r2.width;
+              const wantY = r2.top + anchor.relY * r2.height;
+              const dx = wantX - lastPointer.x;
+              const dy = wantY - lastPointer.y;
+              plannedLeft = container.scrollLeft + dx;
+              plannedTop = container.scrollTop + dy;
+              container.scrollLeft = plannedLeft;
+              container.scrollTop = plannedTop;
+            }
+          }
+
+          // Release the lock *after* the first crisp frame has been presented
           requestAnimationFrame(() => {
-            container.scrollLeft = targetScrollLeft;
-            container.scrollTop = targetScrollTop;
+            commitLock = false;
+            removeFreezeOverlay(overlay);
           });
-        });
-      }
-      function clamp(v, a, b) {
-        return Math.max(a, Math.min(b, v));
+        };
+
+        eventBus.on("updateviewarea", finalize);
+        // Safety net in case the event timing changes
+        setTimeout(finalize, 350);
       }
 
-      function setScaleKeepingPointer(cx, cy, newScale) {
-        const prev = pdfViewer.currentScale || 1;
-        if (newScale === prev) return;
+      function applyCssPinchAtPointer(targetScaleCandidate) {
+        const target = Math.max(
+          MIN_SCALE,
+          Math.min(MAX_SCALE, targetScaleCandidate),
+        );
         const rect = container.getBoundingClientRect();
-        const px = container.scrollLeft + (cx - rect.left);
-        const py = container.scrollTop + (cy - rect.top);
-        const k = newScale / prev;
-        pdfViewer.currentScale = newScale;
-        requestAnimationFrame(() => {
-          container.scrollLeft = px * k - (cx - rect.left);
-          container.scrollTop = py * k - (cy - rect.top);
-        });
+        // Compute transform origin in *content* coords so zoom is centered at cursor
+        const originX = container.scrollLeft + (lastPointer.x - rect.left);
+        const originY = container.scrollTop + (lastPointer.y - rect.top);
+        const cssMultiplier = target / (committedScale || 1);
+
+        viewerEl.style.transformOrigin = `${originX}px ${originY}px`;
+        viewerEl.style.transform = `scale(${cssMultiplier})`;
+        cssScale = target;
       }
 
+      // Our zoom handler (container-level). We keep your smooth logic unchanged.
       container.addEventListener(
         "wheel",
         (e) => {
           const isZoomGesture = e.ctrlKey || e.metaKey;
-          if (!isZoomGesture) return;
+          if (!isZoomGesture) return; // normal scrolling
           e.preventDefault();
 
           beginPinch();
-
-          const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 800 : 1;
-          wheelAccum += e.deltaY * unit;
           lastPointer.x = e.clientX;
           lastPointer.y = e.clientY;
 
+          const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 800 : 1;
+          wheelAccum += e.deltaY * unit;
+
           if (!wheelRAF) {
             wheelRAF = requestAnimationFrame(() => {
-              const factor = Math.exp(-wheelAccum * ZOOM_INTENSITY);
-              const target = clamp(
-                (cssScale || committedScale) * factor,
-                MIN_SCALE,
-                MAX_SCALE,
-              );
-
-              const rect = container.getBoundingClientRect();
-              const originX =
-                container.scrollLeft + (lastPointer.x - rect.left);
-              const originY = container.scrollTop + (lastPointer.y - rect.top);
-              const cssMultiplier = target / committedScale;
-              viewerEl.style.transformOrigin = `${originX}px ${originY}px`;
-              viewerEl.style.transform = `scale(${cssMultiplier})`;
-              cssScale = target;
-
+              const factor = Math.exp(-wheelAccum * ZOOM_INTENSITY); // negative dy => zoom in
+              const current = cssScale || pdfViewer.currentScale || 1;
+              applyCssPinchAtPointer(current * factor);
               wheelAccum = 0;
               wheelRAF = 0;
             });
@@ -293,32 +438,39 @@
         },
         { passive: false },
       );
+
+      // Keyboard zoom (quick CSS step then commit)
       document.addEventListener("keydown", (e) => {
         const mod = e.metaKey || e.ctrlKey;
         if (!mod) return;
         const rect = container.getBoundingClientRect();
         const cx = rect.left + rect.width / 2;
         const cy = rect.top + rect.height / 2;
+        lastPointer.x = cx;
+        lastPointer.y = cy;
+
+        const curr = pdfViewer.currentScale || 1;
         if (e.key === "=" || e.key === "+") {
           e.preventDefault();
-          setScaleKeepingPointer(
-            cx,
-            cy,
-            clamp((pdfViewer.currentScale || 1) * 1.1, MIN_SCALE, MAX_SCALE),
-          );
+          const target = Math.min(MAX_SCALE, curr * 1.15);
+          committedScale = curr;
+          applyCssPinchAtPointer(target);
+          endPinch();
         } else if (e.key === "-") {
           e.preventDefault();
-          setScaleKeepingPointer(
-            cx,
-            cy,
-            clamp((pdfViewer.currentScale || 1) / 1.1, MIN_SCALE, MAX_SCALE),
-          );
+          const target = Math.max(MIN_SCALE, curr / 1.15);
+          committedScale = curr;
+          applyCssPinchAtPointer(target);
+          endPinch();
         } else if (e.key === "0") {
           e.preventDefault();
-          setScaleKeepingPointer(cx, cy, 1);
+          committedScale = curr;
+          applyCssPinchAtPointer(1);
+          endPinch();
         }
       });
 
+      // Quit shortcuts
       document.addEventListener("keydown", (e) => {
         if (
           ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "q") ||
