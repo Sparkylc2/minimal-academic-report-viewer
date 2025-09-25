@@ -540,10 +540,19 @@
 
       let panAnimationId = null;
       let panVelocity = { x: 0, y: 0 };
-      const PAN_SPEED = 75;
+      const PAN_BASE_SPEED = 200;
+      function getEffectiveScale() {
+        return (
+          (pinchActive
+            ? cssScale || pdfViewer.currentScale || 1
+            : pdfViewer.currentScale || 1) || 1
+        );
+      }
       const PAN_SMOOTH_FACTOR = 0.15;
 
       function animatePan() {
+        if (activePanKeys.size) updatePanVelocity();
+
         if (Math.abs(panVelocity.x) > 0.1 || Math.abs(panVelocity.y) > 0.1) {
           container.scrollLeft += panVelocity.x;
           container.scrollTop += panVelocity.y;
@@ -552,7 +561,6 @@
             panVelocity.x *= 1 - PAN_SMOOTH_FACTOR;
             panVelocity.y *= 1 - PAN_SMOOTH_FACTOR;
           }
-
           panAnimationId = requestAnimationFrame(animatePan);
         } else {
           panVelocity.x = 0;
@@ -560,17 +568,18 @@
           panAnimationId = null;
         }
       }
-
       const activePanKeys = new Set();
 
       function updatePanVelocity() {
+        const step = PAN_BASE_SPEED * getEffectiveScale();
+
         let targetVx = 0;
         let targetVy = 0;
 
-        if (activePanKeys.has("h")) targetVx -= PAN_SPEED;
-        if (activePanKeys.has("l")) targetVx += PAN_SPEED;
-        if (activePanKeys.has("k")) targetVy -= PAN_SPEED;
-        if (activePanKeys.has("j")) targetVy += PAN_SPEED;
+        if (activePanKeys.has("h")) targetVx -= step;
+        if (activePanKeys.has("l")) targetVx += step;
+        if (activePanKeys.has("k")) targetVy -= step;
+        if (activePanKeys.has("j")) targetVy += step;
 
         panVelocity.x += (targetVx - panVelocity.x) * PAN_SMOOTH_FACTOR;
         panVelocity.y += (targetVy - panVelocity.y) * PAN_SMOOTH_FACTOR;
@@ -579,7 +588,6 @@
           panAnimationId = requestAnimationFrame(animatePan);
         }
       }
-
       document.addEventListener("keydown", (e) => {
         if (e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
 
