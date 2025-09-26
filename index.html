@@ -34,11 +34,29 @@
         touch-action: none;
       }
 
-      #viewerContainer {
+      :root {
+        --radius: 16px;
+        --bg: #181616;
+      }
+      #clip {
         position: fixed;
         inset: 0;
-        overflow: auto;
+        background: var(--bg);
 
+        border-radius: var(--radius);
+        overflow: hidden;
+        clip-path: inset(0 round var(--radius));
+
+        contain: paint;
+        isolation: isolate;
+
+        transform: translateZ(0);
+        will-change: clip-path, transform;
+      }
+      #viewerContainer {
+        position: absolute;
+        inset: 0;
+        overflow: auto;
         background: var(--bg);
         overscroll-behavior-y: contain;
         scrollbar-gutter: stable both-edges;
@@ -47,7 +65,6 @@
         overflow-anchor: none;
         scroll-behavior: auto;
       }
-
       #viewerContainer::-webkit-scrollbar {
         width: 0;
         height: 0;
@@ -94,12 +111,17 @@
     </style>
   </head>
   <body>
-    <div id="viewerFrame">
-      <div id="viewerContainer" tabindex="0" aria-label="PDF Viewer">
-        <div id="viewer" class="pdfViewer"></div>
+    <div id="clip">
+      <div id="viewerFrame">
+        <div id="viewerContainer" tabindex="0" aria-label="PDF Viewer">
+          <div id="viewer" class="pdfViewer"></div>
+        </div>
       </div>
     </div>
-
+    <!-- <div class="corner tl"></div> -->
+    <!-- <div class="corner tr"></div> -->
+    <!-- <div class="corner bl"></div> -->
+    <!-- <div class="corner br"></div> -->
     <script>
       if (!Promise.withResolvers) {
         Promise.withResolvers = function () {
@@ -340,12 +362,27 @@
       }
 
       function makeFreezeOverlayFromVisibleCanvases() {
+        const clip = document.getElementById("clip");
         const overlay = document.createElement("div");
         overlay.id = "freezeOverlay";
 
+        Object.assign(overlay.style, {
+          position: "absolute",
+          left: "0",
+          top: "0",
+          right: "0",
+          bottom: "0",
+          pointerEvents: "none",
+          zIndex: "2147483647",
+          background: "transparent",
+        });
+
+        clip.appendChild(overlay);
+
+        const clipRect = clip.getBoundingClientRect();
         const viewport = container.getBoundingClientRect();
 
-        const margin = 50;
+        const margin = 32;
         const topBound = viewport.top - margin;
         const bottomBound = viewport.bottom + margin;
 
@@ -353,21 +390,26 @@
         for (const canvas of canvases) {
           const r = canvas.getBoundingClientRect();
           if (r.bottom < topBound || r.top > bottomBound) continue;
+
           try {
             const url = canvas.toDataURL("image/png");
             const img = new Image();
             img.decoding = "sync";
             img.loading = "eager";
             img.src = url;
-            img.style.position = "absolute";
-            img.style.left = `${r.left}px`;
-            img.style.top = `${r.top}px`;
-            img.style.width = `${r.width}px`;
-            img.style.height = `${r.height}px`;
+
+            Object.assign(img.style, {
+              position: "absolute",
+              left: `${r.left - clipRect.left}px`,
+              top: `${r.top - clipRect.top}px`,
+              width: `${r.width}px`,
+              height: `${r.height}px`,
+            });
+
             overlay.appendChild(img);
           } catch {}
         }
-        document.body.appendChild(overlay);
+
         overlay.getBoundingClientRect();
         return overlay;
       }

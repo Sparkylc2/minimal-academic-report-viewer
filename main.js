@@ -1,30 +1,11 @@
-const { app, BrowserWindow, ipcMain } = require("electron");
+const { app, BaseWindow, WebContentsView, ipcMain } = require("electron");
 const path = require("path");
 const fs = require("fs");
+const chokidar = require("chokidar");
 
 app.commandLine.appendSwitch("disable-pinch");
-let mainWindow;
-let watcher;
 
-const gotLock = app.requestSingleInstanceLock();
-if (!gotLock) {
-  app.quit();
-  process.exit(0);
-} else {
-  app.on("second-instance", (_event, argv2 /*, workingDir */) => {
-    const newPdf = resolvePdfArg(argv2.slice(1));
-    if (mainWindow) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
-    if (newPdf && fs.existsSync(newPdf)) {
-      pdfPath = newPdf;
-      watchFile(newPdf);
-      reloadPdf();
-    }
-  });
-}
+// -------------------- argv helpers --------------------
 const argv = process.argv.slice(1);
 
 function parseNumberFlag(name, def) {
@@ -61,13 +42,23 @@ function parseStringFlag(name, def) {
   return def;
 }
 
+// -------------------- config --------------------
+const margins = {
+  top: parseNumberFlag("marginTop", 32),
+  right: parseNumberFlag("marginRight", 0),
+  bottom: parseNumberFlag("marginBottom", 32),
+  left: parseNumberFlag("marginLeft", 0),
+};
+
 const viewerConfig = {
   pageGap: parseNumberFlag("pageGap", 16),
   pageRadius: parseNumberFlag("pageRadius", 8),
   fit: parseEnumFlag("fit", new Set(["width", "height", "auto"]), "auto"),
   bg: parseStringFlag("bg", "#181616"),
+  margins,
 };
 
+// -------------------- resolve initial pdf --------------------
 function resolvePdfArg(args) {
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
@@ -84,37 +75,111 @@ function resolvePdfArg(args) {
 }
 let pdfPath = resolvePdfArg(argv);
 
+// -------------------- single instance --------------------
+const gotLock = app.requestSingleInstanceLock();
+if (!gotLock) {
+  app.quit();
+  process.exit(0);
+} else {
+  app.on("second-instance", (_event, argv2) => {
+    const newPdf = resolvePdfArg(argv2.slice(1));
+    if (mainWin) {
+      if (mainWin.isMinimized()) mainWin.restore();
+      mainWin.show();
+      mainWin.focus();
+    }
+    if (newPdf && fs.existsSync(newPdf)) {
+      pdfPath = newPdf;
+      watchFile(newPdf);
+      sendToView("load-pdf", pdfPath);
+    }
+  });
+}
+
+// -------------------- globals --------------------
+let mainWin = null;
+let view = null;
+let watcher = null;
+
+// -------------------- file watching --------------------
+function watchFile(filePath) {
+  if (watcher) watcher.close();
+  watcher = chokidar.watch(filePath, {
+    persistent: true,
+    awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
+    ignoreInitial: true,
+  });
+  watcher.on("add", reloadPdf).on("change", reloadPdf);
+}
+
+function reloadPdf() {
+  if (view && !view.webContents.isDestroyed()) {
+    view.webContents.send("reload-pdf", pdfPath);
+  }
+}
+
+// -------------------- helpers --------------------
+function getPdfView() {
+  return view;
+}
+function sendToView(channel, ...args) {
+  const v = getPdfView();
+  if (v && !v.webContents.isDestroyed()) v.webContents.send(channel, ...args);
+}
+
+// -------------------- window & view --------------------
 function createWindow() {
-  mainWindow = new BrowserWindow({
+  mainWin = new BaseWindow({
     width: 900,
     height: 1200,
     frame: false,
     transparent: true,
-    backgroundColor: (viewerConfig && viewerConfig.bg) || "#181616",
+    useContentSize: true,
     titleBarStyle: "customButtonsOnHover",
     hasShadow: false,
+    backgroundColor: viewerConfig.bg || "#181616",
+  });
+
+  view = new WebContentsView({
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
       preload: path.join(__dirname, "preload.js"),
+      backgroundThrottling: false,
     },
   });
 
-  mainWindow.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
-  if (mainWindow.webContents.setLayoutZoomLevelLimits) {
-    mainWindow.webContents.setLayoutZoomLevelLimits(0, 0);
+  try {
+    view.webContents.setBackgroundColor("#00000000");
+  } catch {}
+
+  mainWin.contentView.addChildView(view);
+
+  const setBounds = () => {
+    const { width, height } = mainWin.getContentBounds();
+    const { top, right, bottom, left } = viewerConfig.margins;
+    view.setBounds({
+      x: left,
+      y: top,
+      width: Math.max(0, width - left - right),
+      height: Math.max(0, height - top - bottom),
+    });
+  };
+  setBounds();
+  mainWin.on("resize", setBounds);
+
+  view.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
+  if (view.webContents.setLayoutZoomLevelLimits) {
+    view.webContents.setLayoutZoomLevelLimits(0, 0);
   }
+  view.webContents.openDevTools({ mode: "detach" });
+  view.webContents.loadFile("index.html");
 
-  mainWindow.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
-
-  mainWindow.setTitle("TeX PDF Viewer");
-  mainWindow.loadFile("index.html");
-
-  mainWindow.webContents.on("did-finish-load", () => {
-    mainWindow.webContents.send("viewer-config", viewerConfig);
+  view.webContents.on("did-finish-load", () => {
+    view.webContents.send("viewer-config", viewerConfig);
 
     if (pdfPath) {
-      mainWindow.webContents.send("load-pdf", pdfPath);
+      view.webContents.send("load-pdf", pdfPath);
       if (fs.existsSync(pdfPath)) {
         watchFile(pdfPath);
       } else {
@@ -126,45 +191,28 @@ function createWindow() {
   });
 }
 
-function reloadPdf() {
-  if (pdfPath && mainWindow && !mainWindow.isDestroyed()) {
-    mainWindow.webContents.send("reload-pdf", pdfPath);
-  }
-}
-
-const chokidar = require("chokidar");
-
-function watchFile(filePath) {
-  if (watcher) watcher.close();
-  watcher = chokidar.watch(filePath, {
-    persistent: true,
-    awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
-    ignoreInitial: true,
-  });
-  watcher
-    .on("add", reloadPdf)
-    .on("change", reloadPdf)
-    .on("unlink", () => {});
-}
+// -------------------- app lifecycle --------------------
 app.whenReady().then(createWindow);
 
 app.on("window-all-closed", () => {
   if (watcher) watcher.close();
   if (process.platform !== "darwin") app.quit();
 });
+
+app.on("activate", () => {
+  if (!mainWin) createWindow();
+});
+
+// -------------------- IPC --------------------
 ipcMain.on("close-window", () => {
   if (watcher) watcher.close();
   app.quit();
-});
-
-app.on("activate", () => {
-  if (BrowserWindow.getAllWindows().length === 0) createWindow();
 });
 
 ipcMain.on("load-new-pdf", (_event, newPath) => {
   if (typeof newPath === "string" && fs.existsSync(newPath)) {
     pdfPath = newPath;
     watchFile(newPath);
-    reloadPdf();
+    sendToView("reload-pdf", pdfPath);
   }
 });
