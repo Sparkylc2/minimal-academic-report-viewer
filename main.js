@@ -192,7 +192,25 @@ function createWindow() {
 }
 
 // -------------------- app lifecycle --------------------
-app.whenReady().then(createWindow);
+app.whenReady().then(() => {
+  createWindow();
+  if (keepAlive.ppid && Number.isFinite(keepAlive.ppid)) {
+    const ppid = keepAlive.ppid;
+    const checkParent = () => {
+      try {
+        process.kill(ppid, 0);
+      } catch {
+        if (watcher) watcher.close();
+        app.quit();
+      }
+    };
+    setInterval(checkParent, 500).unref();
+  }
+});
+
+const keepAlive = {
+  ppid: parseNumberFlag("ppid", 0),
+};
 
 app.on("window-all-closed", () => {
   if (watcher) watcher.close();

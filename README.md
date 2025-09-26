@@ -8,7 +8,7 @@ This viewer is about as minimal as it gets. It has no title-bar, traffic light c
 
 To use this pdf viewer, clone it wherever, cd in, and run `npm install` and then `npm link`. It will create a command called `pdfview` which you can then run from wherever.
 
-If you want to configure it further, change colors etc. etc. you can either pass a few params in as args (namely `--pageGap`, `--pageRadius`, `--fit` and `--bg`). `--fit` takes either `width`, `height` or `auto`. The others take numbers (for `pageGap` and `pageRadius`) or a hex string (for `bg`).
+If you want to configure it further, change colors etc. etc. you can either pass a few params in as args (namely `--pageGap`, `--pageRadius`, `--fit`, `--bg`, `--marginTop`, `--marginLeft`, `--marginRight`, and `--marginBottom`). `--fit` takes either `width`, `height` or `auto`. The others take numbers, or a hex string (for `bg`).
 
 Any other customization can be done just by editing the files.
 If you want to rebind hjkl to something else, you can do that here in `index.html` (and you can increase the pan speed as well):
@@ -32,7 +32,8 @@ When using this with neovim, you can use the following set up. I havent tested t
         vim.g.vimtex_view_method = "general"
         vim.g.vimtex_view_general_viewer = "pdfview"
 
-        vim.g.vimtex_view_general_options = "@pdf"
+			vim.g.vimtex_view_general_options = ("--ppid %d @pdf"):format(vim.fn.getpid())
+
         vim.g.vimtex_view_use_temp_files = 0
 
         vim.g.vimtex_view_automatic = 1
