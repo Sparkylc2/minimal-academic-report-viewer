@@ -172,7 +172,6 @@ function createWindow() {
   if (view.webContents.setLayoutZoomLevelLimits) {
     view.webContents.setLayoutZoomLevelLimits(0, 0);
   }
-  view.webContents.openDevTools({ mode: "detach" });
   view.webContents.loadFile("index.html");
 
   view.webContents.on("did-finish-load", () => {
