@@ -1,12 +1,46 @@
-const { app, BaseWindow, WebContentsView, ipcMain } = require("electron");
+const {
+  app,
+  BaseWindow,
+  WebContentsView,
+  ipcMain,
+  globalShortcut,
+} = require("electron");
+
 const path = require("path");
 const fs = require("fs");
 const chokidar = require("chokidar");
 
+let CommandPalette = null;
+let TabManager = null;
+
+try {
+  const palettePath = path.join(__dirname, "./modules/command_palette/palette");
+  if (fs.existsSync(palettePath + ".js")) {
+    CommandPalette = require(palettePath);
+    console.log("[MAIN] CommandPalette module loaded");
+  } else {
+    console.warn("[MAIN] CommandPalette module not found at:", palettePath);
+  }
+} catch (e) {
+  console.error("[MAIN] Failed to load CommandPalette:", e);
+}
+
+try {
+  const tabPath = path.join(__dirname, "./modules/tab_manager"); // CHANGE: content_manager -> tab_manager
+  if (fs.existsSync(tabPath + ".js")) {
+    TabManager = require(tabPath); // CHANGE
+    console.log("[MAIN] TabManager module loaded"); // CHANGE
+  } else {
+    console.warn("[MAIN] TabManager module not found at:", tabPath); // CHANGE
+  }
+} catch (e) {
+  console.error("[MAIN] Failed to load TabManager:", e); // CHANGE
+}
+
 app.commandLine.appendSwitch("disable-pinch");
 
 // -------------------- argv helpers --------------------
-const argv = process.argv.slice(1);
+const argv = process.argv.slice(process.defaultApp ? 2 : 1);
 
 function parseNumberFlag(name, def) {
   const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
@@ -44,9 +78,9 @@ function parseStringFlag(name, def) {
 
 // -------------------- config --------------------
 const margins = {
-  top: parseNumberFlag("marginTop", 32),
+  top: parseNumberFlag("marginTop", 16),
   right: parseNumberFlag("marginRight", 0),
-  bottom: parseNumberFlag("marginBottom", 32),
+  bottom: parseNumberFlag("marginBottom", 16),
   left: parseNumberFlag("marginLeft", 0),
 };
 
@@ -98,9 +132,9 @@ if (!gotLock) {
 
 // -------------------- globals --------------------
 let mainWin = null;
-let view = null;
 let watcher = null;
-
+let commandPalette = null;
+let tabManager = null;
 // -------------------- file watching --------------------
 function watchFile(filePath) {
   if (watcher) watcher.close();
@@ -127,7 +161,27 @@ function sendToView(channel, ...args) {
   if (v && !v.webContents.isDestroyed()) v.webContents.send(channel, ...args);
 }
 
+function resolveInitialTarget(args) {
+  for (const raw of args) {
+    if (!raw || raw.startsWith("--")) continue;
+
+    const a = String(raw).trim();
+    console.log("A", a);
+    if (a.startsWith("http://") || a.startsWith("https://")) return a;
+
+    if (/\.pdf$/i.test(a)) {
+      try {
+        const abs = path.resolve(a);
+        console.log(abs);
+        if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return abs;
+      } catch (_) {}
+    }
+  }
+  return null;
+}
+let initialTarget = resolveInitialTarget(argv);
 // -------------------- window & view --------------------
+
 function createWindow() {
   mainWin = new BaseWindow({
     width: 900,
@@ -140,54 +194,31 @@ function createWindow() {
     backgroundColor: viewerConfig.bg || "#181616",
   });
 
-  view = new WebContentsView({
-    webPreferences: {
-      contextIsolation: true,
-      nodeIntegration: false,
-      preload: path.join(__dirname, "preload.js"),
-      backgroundThrottling: false,
-    },
-  });
+  // REMOVE THE view CREATION AND ALL view-related code
 
-  try {
-    view.webContents.setBackgroundColor("#00000000");
-  } catch {}
+  // CHANGE: Create tab manager instead
+  tabManager = new TabManager(mainWin, viewerConfig);
 
-  mainWin.contentView.addChildView(view);
+  // Create command palette
+  commandPalette = new CommandPalette(mainWin);
+  commandPalette.tabManager = tabManager; // CHANGE: Link them together
 
-  const setBounds = () => {
-    const { width, height } = mainWin.getContentBounds();
-    const { top, right, bottom, left } = viewerConfig.margins;
-    view.setBounds({
-      x: left,
-      y: top,
-      width: Math.max(0, width - left - right),
-      height: Math.max(0, height - top - bottom),
-    });
-  };
-  setBounds();
-  mainWin.on("resize", setBounds);
-
-  view.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
-  if (view.webContents.setLayoutZoomLevelLimits) {
-    view.webContents.setLayoutZoomLevelLimits(0, 0);
-  }
-  view.webContents.loadFile("index.html");
-
-  view.webContents.on("did-finish-load", () => {
-    view.webContents.send("viewer-config", viewerConfig);
-
-    if (pdfPath) {
-      view.webContents.send("load-pdf", pdfPath);
-      if (fs.existsSync(pdfPath)) {
-        watchFile(pdfPath);
-      } else {
-        console.warn("[pdfview] Path did not exist at launch:", pdfPath);
-      }
-    } else {
-      console.warn("[pdfview] No .pdf argument found. argv =", argv);
+  globalShortcut.register("CommandOrControl+R", () => {
+    if (mainWin && !mainWin.isDestroyed() && commandPalette) {
+      commandPalette.toggle();
     }
   });
+
+  // CHANGE: Use tab manager for initial target
+  if (initialTarget) {
+    if (initialTarget.endsWith(".pdf")) {
+      tabManager.getOrCreatePdfTab(initialTarget);
+    } else {
+      tabManager.getOrCreateWebTab(initialTarget);
+    }
+  } else {
+    tabManager.getOrCreateWebTab("https://google.com");
+  }
 }
 
 // -------------------- app lifecycle --------------------
@@ -227,9 +258,8 @@ ipcMain.on("close-window", () => {
 });
 
 ipcMain.on("load-new-pdf", (_event, newPath) => {
-  if (typeof newPath === "string" && fs.existsSync(newPath)) {
-    pdfPath = newPath;
-    watchFile(newPath);
-    sendToView("reload-pdf", pdfPath);
+  if (tabManager && typeof newPath === "string") {
+    // CHANGE
+    tabManager.getOrCreatePdfTab(newPath); // CHANGE
   }
 });

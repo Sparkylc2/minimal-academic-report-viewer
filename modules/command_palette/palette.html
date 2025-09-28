@@ -1,0 +1,239 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        background: transparent;
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          sans-serif;
+        overflow: hidden;
+        user-select: none;
+      }
+
+      .palette-container {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        position: relative;
+      }
+
+      .palette {
+        width: 100%;
+        height: 60px;
+        background: rgba(30, 30, 30, 0.98);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 10px;
+        box-shadow:
+          0 0 0 0.5px rgba(255, 255, 255, 0.1),
+          0 20px 40px rgba(0, 0, 0, 0.4);
+        display: flex;
+        align-items: center;
+        padding: 0 20px;
+        animation: slideDown 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+      }
+
+      @keyframes slideDown {
+        from {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      .search-icon {
+        width: 20px;
+        height: 20px;
+        margin-right: 12px;
+        flex-shrink: 0;
+        opacity: 0.5;
+      }
+
+      .search-icon svg {
+        width: 100%;
+        height: 100%;
+        stroke: #fff;
+        stroke-width: 2;
+        fill: none;
+      }
+
+      #input {
+        flex: 1;
+        background: transparent;
+        border: none;
+        outline: none;
+        color: #fff;
+        font-size: 20px;
+        font-weight: 300;
+        letter-spacing: 0.2px;
+      }
+
+      #input::placeholder {
+        color: rgba(255, 255, 255, 0.3);
+      }
+
+      .hint {
+        color: rgba(255, 255, 255, 0.3);
+        font-size: 14px;
+        margin-left: 12px;
+        white-space: nowrap;
+        animation: fadeIn 0.3s ease 0.2s both;
+      }
+
+      @keyframes fadeIn {
+        from {
+          opacity: 0;
+        }
+        to {
+          opacity: 1;
+        }
+      }
+
+      .palette.hiding {
+        animation: slideUp 0.15s cubic-bezier(0.4, 0, 1, 1) forwards;
+      }
+
+      @keyframes slideUp {
+        to {
+          opacity: 0;
+          transform: translateY(-10px);
+        }
+      }
+
+      #dropdown {
+        position: absolute;
+        top: 70px;
+        left: 0;
+        right: 0;
+        background: rgba(30, 30, 30, 0.98);
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+        border-radius: 10px;
+        padding: 10px;
+        display: none;
+        max-height: 300px;
+        overflow-y: auto;
+      }
+
+      #dropdown .pdf-item {
+        color: white;
+        padding: 8px;
+        border-radius: 6px;
+        transition: background 0.1s;
+      }
+
+      #dropdown .pdf-item:hover {
+        background: rgba(255, 255, 255, 0.1);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="palette-container">
+      <div class="palette" id="palette">
+        <div class="search-icon">
+          <svg viewBox="0 0 24 24">
+            <circle cx="11" cy="11" r="8" />
+            <path d="M21 21l-4.35-4.35" />
+          </svg>
+        </div>
+        <input
+          type="text"
+          id="input"
+          placeholder="Search or enter URL"
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+        <span class="hint" id="hint">⏎ to search</span>
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = window.electron;
+      const input = document.getElementById("input");
+      const hint = document.getElementById("hint");
+      const palette = document.getElementById("palette");
+
+      input.addEventListener("keydown", (e) => {
+        if (e.key === "Tab") {
+          e.preventDefault();
+          const value = input.value.trim();
+
+          if (value === "s") {
+            ipcRenderer.send("palette-tab-command", "web-switch");
+          } else if (value === "p") {
+            ipcRenderer.send("palette-tab-command", "pdf-switch");
+          } else if (value === "b") {
+            ipcRenderer.send("palette-tab-command", "back");
+          } else if (value === "f") {
+            ipcRenderer.send("palette-tab-command", "forward");
+          }
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          const value = input.value.trim();
+          if (value) {
+            ipcRenderer.send("palette-execute", value);
+          }
+        } else if (e.key === "Escape") {
+          e.preventDefault();
+          ipcRenderer.send("palette-cancel");
+        }
+      });
+
+      input.addEventListener("input", (e) => {
+        const value = e.target.value.trim();
+
+        if (!value) {
+          hint.textContent = "⏎ to search";
+        } else if (value === "s") {
+          hint.textContent = "Tab to switch to web";
+        } else if (value === "p") {
+          hint.textContent = "Tab to switch to PDF";
+        } else if (value === "b") {
+          hint.textContent = "Tab to go back";
+        } else if (value === "f") {
+          hint.textContent = "Tab to go forward";
+        } else if (
+          value.startsWith("http://") ||
+          value.startsWith("https://")
+        ) {
+          hint.textContent = "⏎ to navigate";
+        } else if (value.includes(".") && !value.includes(" ")) {
+          hint.textContent = "⏎ to visit site";
+        } else {
+          hint.textContent = "⏎ to search Google";
+        }
+      });
+
+      ipcRenderer.on("palette-show", () => {
+        palette.classList.remove("hiding");
+        input.value = "";
+        input.focus();
+        hint.textContent = "⏎ to search";
+      });
+
+      ipcRenderer.on("palette-hide", () => {
+        palette.classList.add("hiding");
+        input.blur();
+      });
+
+      window.addEventListener("DOMContentLoaded", () => {
+        input.focus();
+      });
+    </script>
+  </body>
+</html>

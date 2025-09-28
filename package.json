@@ -8,7 +8,8 @@
   "license": "MIT",
   "scripts": {
     "start": "electron .",
-    "dev": "electron . --enable-logging",
+    "dev": "electron . --enable-logging --log-level=0 --trace-warnings",
+    "debug": "electron --inspect=5858 . --enable-logging",
     "dist": "electron-builder",
     "dist-mac": "electron-builder --mac",
     "dist-linux": "electron-builder --linux",
