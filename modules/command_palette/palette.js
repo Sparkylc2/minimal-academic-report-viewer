@@ -2,11 +2,11 @@ const { BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 
 class CommandPalette {
-  constructor(parentWindow) {
+  constructor(parentWindow, tabManager) {
     this.parentWin = parentWindow;
     this.paletteWin = null;
     this.isVisible = false;
-    this.tabManager = null;
+    this.tabManager = tabManager;
     this.setupIPC();
   }
 

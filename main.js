@@ -1,6 +1,8 @@
+// main.js
 const {
   app,
   BaseWindow,
+  screen,
   WebContentsView,
   ipcMain,
   globalShortcut,
@@ -10,35 +12,10 @@ const path = require("path");
 const fs = require("fs");
 const chokidar = require("chokidar");
 
-let CommandPalette = null;
-let TabManager = null;
-
-try {
-  const palettePath = path.join(__dirname, "./modules/command_palette/palette");
-  if (fs.existsSync(palettePath + ".js")) {
-    CommandPalette = require(palettePath);
-    console.log("[MAIN] CommandPalette module loaded");
-  } else {
-    console.warn("[MAIN] CommandPalette module not found at:", palettePath);
-  }
-} catch (e) {
-  console.error("[MAIN] Failed to load CommandPalette:", e);
-}
-
-try {
-  const tabPath = path.join(__dirname, "./modules/tab_manager"); // CHANGE: content_manager -> tab_manager
-  if (fs.existsSync(tabPath + ".js")) {
-    TabManager = require(tabPath); // CHANGE
-    console.log("[MAIN] TabManager module loaded"); // CHANGE
-  } else {
-    console.warn("[MAIN] TabManager module not found at:", tabPath); // CHANGE
-  }
-} catch (e) {
-  console.error("[MAIN] Failed to load TabManager:", e); // CHANGE
-}
+let CommandPalette = require("./modules/command_palette/palette");
+let TabManager = require("./modules/tab_manager");
 
 app.commandLine.appendSwitch("disable-pinch");
-
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
 
@@ -80,7 +57,7 @@ function parseStringFlag(name, def) {
 const margins = {
   top: parseNumberFlag("marginTop", 16),
   right: parseNumberFlag("marginRight", 0),
-  bottom: parseNumberFlag("marginBottom", 16),
+  bottom: parseNumberFlag("marginBottom", 8),
   left: parseNumberFlag("marginLeft", 0),
 };
 
@@ -92,6 +69,10 @@ const viewerConfig = {
   margins,
 };
 
+function isHiDPI() {
+  const scaleFactor = screen.getPrimaryDisplay().scaleFactor;
+  return scaleFactor > 1;
+}
 // -------------------- resolve initial pdf --------------------
 function resolvePdfArg(args) {
   for (const raw of args) {
@@ -107,7 +88,6 @@ function resolvePdfArg(args) {
   }
   return null;
 }
-let pdfPath = resolvePdfArg(argv);
 
 // -------------------- single instance --------------------
 const gotLock = app.requestSingleInstanceLock();
@@ -124,8 +104,9 @@ if (!gotLock) {
     }
     if (newPdf && fs.existsSync(newPdf)) {
       pdfPath = newPdf;
+      ensurePdfTabLoaded(newPdf);
       watchFile(newPdf);
-      sendToView("load-pdf", pdfPath);
+      sendToPdfView("load-pdf", newPdf);
     }
   });
 }
@@ -135,53 +116,75 @@ let mainWin = null;
 let watcher = null;
 let commandPalette = null;
 let tabManager = null;
-// -------------------- file watching --------------------
+
+let pdfPath = null;
+let initialTarget = resolveInitialTarget(argv);
+
+// -------------------- file watching (global, single PDF) --------------------
 function watchFile(filePath) {
-  if (watcher) watcher.close();
+  if (watcher) {
+    try {
+      watcher.close();
+    } catch {}
+    watcher = null;
+  }
+  if (!filePath || !fs.existsSync(filePath)) return;
+
   watcher = chokidar.watch(filePath, {
     persistent: true,
     awaitWriteFinish: { stabilityThreshold: 300, pollInterval: 100 },
     ignoreInitial: true,
   });
+
   watcher.on("add", reloadPdf).on("change", reloadPdf);
 }
 
-function reloadPdf() {
-  if (view && !view.webContents.isDestroyed()) {
-    view.webContents.send("reload-pdf", pdfPath);
-  }
+function getPdfView() {
+  if (!tabManager) return null;
+  const firstPdfId = tabManager.getFirstPdfTab
+    ? tabManager.getFirstPdfTab()
+    : null;
+  if (!firstPdfId) return null;
+
+  const tab = tabManager.tabs && tabManager.tabs.get(firstPdfId);
+  return tab && tab.view ? tab.view : null;
 }
 
-// -------------------- helpers --------------------
-function getPdfView() {
-  return view;
-}
-function sendToView(channel, ...args) {
+function sendToPdfView(channel, ...args) {
   const v = getPdfView();
   if (v && !v.webContents.isDestroyed()) v.webContents.send(channel, ...args);
 }
 
+function reloadPdf() {
+  if (pdfPath) {
+    sendToPdfView("reload-pdf", pdfPath);
+  }
+}
+
+// -------------------- helpers --------------------
 function resolveInitialTarget(args) {
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
-
     const a = String(raw).trim();
-    console.log("A", a);
+
     if (a.startsWith("http://") || a.startsWith("https://")) return a;
 
     if (/\.pdf$/i.test(a)) {
       try {
         const abs = path.resolve(a);
-        console.log(abs);
         if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return abs;
       } catch (_) {}
     }
   }
   return null;
 }
-let initialTarget = resolveInitialTarget(argv);
-// -------------------- window & view --------------------
 
+function ensurePdfTabLoaded(targetPath) {
+  if (!tabManager) return;
+  tabManager.getOrCreatePdfTab(targetPath);
+}
+
+// -------------------- window & view --------------------
 function createWindow() {
   mainWin = new BaseWindow({
     width: 900,
@@ -194,14 +197,8 @@ function createWindow() {
     backgroundColor: viewerConfig.bg || "#181616",
   });
 
-  // REMOVE THE view CREATION AND ALL view-related code
-
-  // CHANGE: Create tab manager instead
   tabManager = new TabManager(mainWin, viewerConfig);
-
-  // Create command palette
-  commandPalette = new CommandPalette(mainWin);
-  commandPalette.tabManager = tabManager; // CHANGE: Link them together
+  commandPalette = new CommandPalette(mainWin, tabManager);
 
   globalShortcut.register("CommandOrControl+R", () => {
     if (mainWin && !mainWin.isDestroyed() && commandPalette) {
@@ -209,10 +206,11 @@ function createWindow() {
     }
   });
 
-  // CHANGE: Use tab manager for initial target
   if (initialTarget) {
     if (initialTarget.endsWith(".pdf")) {
-      tabManager.getOrCreatePdfTab(initialTarget);
+      pdfPath = initialTarget;
+      ensurePdfTabLoaded(initialTarget);
+      watchFile(initialTarget);
     } else {
       tabManager.getOrCreateWebTab(initialTarget);
     }
@@ -223,6 +221,11 @@ function createWindow() {
 
 // -------------------- app lifecycle --------------------
 app.whenReady().then(() => {
+  if (isHiDPI()) {
+    Object.keys(viewerConfig.margins).forEach((k) => {
+      viewerConfig.margins[k] = Math.round(viewerConfig.margins[k] * 2);
+    });
+  }
   createWindow();
   if (keepAlive.ppid && Number.isFinite(keepAlive.ppid)) {
     const ppid = keepAlive.ppid;
@@ -258,8 +261,12 @@ ipcMain.on("close-window", () => {
 });
 
 ipcMain.on("load-new-pdf", (_event, newPath) => {
-  if (tabManager && typeof newPath === "string") {
-    // CHANGE
-    tabManager.getOrCreatePdfTab(newPath); // CHANGE
-  }
+  if (typeof newPath !== "string" || !newPath.trim()) return;
+  const abs = path.resolve(newPath.trim());
+  if (!fs.existsSync(abs)) return;
+
+  pdfPath = abs;
+  ensurePdfTabLoaded(abs);
+  watchFile(abs);
+  sendToPdfView("load-pdf", abs);
 });

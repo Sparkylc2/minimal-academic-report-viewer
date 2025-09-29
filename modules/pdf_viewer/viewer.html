@@ -10,7 +10,6 @@
     <style>
       :root {
         --bg: #181616;
-        --base-page-gap: 32px;
         --page-gap: 32px;
         --page-radius: 8px;
       }
@@ -44,6 +43,13 @@
         will-change: clip-path, transform;
       }
 
+      #viewerFrame {
+        position: absolute;
+        inset: 0;
+        overflow: hidden;
+        background: var(--bg);
+      }
+
       #viewerContainer {
         position: absolute;
         inset: 0;
@@ -53,10 +59,7 @@
         scrollbar-gutter: stable both-edges;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
-        overflow-anchor: none;
-        scroll-behavior: auto;
       }
-
       #viewerContainer::-webkit-scrollbar {
         width: 0;
         height: 0;
@@ -65,8 +68,12 @@
 
       #viewer {
         background: var(--bg) !important;
+        /* padding-top: var(--window-margin-top) !important; */
+        /* padding-bottom: var(--window-margin-bottom) !important; */
+        border-top: 1px solid transparent;
       }
 
+      /* page rounding */
       .pdfViewer .page,
       .pdfViewer .page .canvasWrapper,
       .pdfViewer .page canvas,
@@ -75,12 +82,19 @@
         border-radius: var(--page-radius);
       }
 
+      /* Inter-page spacing: only bottom margin; top/bottom window edges come from #viewer padding */
       .pdfViewer .page {
         margin: 0 auto var(--page-gap) auto !important;
         box-shadow: none !important;
         border: none !important;
         background: #ffffff;
         overflow: hidden;
+      }
+      .pdfViewer .page:first-child {
+        margin-top: 0 !important;
+      }
+      .pdfViewer .page:last-child {
+        margin-bottom: 0 !important;
       }
 
       #freezeOverlay {

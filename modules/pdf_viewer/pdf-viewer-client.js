@@ -237,14 +237,10 @@ function makeFreezeOverlayFromVisibleCanvases() {
   const clipRect = clip.getBoundingClientRect();
   const viewport = container.getBoundingClientRect();
 
-  const margin = 32;
-  const topBound = viewport.top - margin;
-  const bottomBound = viewport.bottom + margin;
-
   const canvases = viewerEl.querySelectorAll(".page canvas");
   for (const canvas of canvases) {
     const r = canvas.getBoundingClientRect();
-    if (r.bottom < topBound || r.top > bottomBound) continue;
+    if (r.bottom < viewport.top || r.top > viewport.bottom) continue;
 
     try {
       const url = canvas.toDataURL("image/png");
