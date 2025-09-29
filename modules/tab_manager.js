@@ -104,15 +104,10 @@ class TabManager extends EventEmitter {
         offscreen: false,
       },
     });
-    view.webContents.openDevTools({ mode: "detach" });
+    // view.webContents.openDevTools({ mode: "detach" });
     try {
       view.webContents.setBackgroundColor("#00000000");
     } catch {}
-
-    // view.webContents.setVisualZoomLevelLimits(1, 1).catch(() => {});
-    // if (view.webContents.setLayoutZoomLevelLimits) {
-    //   view.webContents.setLayoutZoomLevelLimits(0, 0);
-    // }
 
     const tab = {
       id,
@@ -133,6 +128,31 @@ class TabManager extends EventEmitter {
     view.webContents.on("did-finish-load", () => {
       view.webContents.send("viewer-config", this.config);
       view.webContents.send("load-pdf", pdfPath);
+    });
+    view.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return;
+
+      const cmdOrCtrl =
+        process.platform === "darwin" ? input.meta : input.control;
+
+      if (cmdOrCtrl && input.key === "t" && !input.shift) {
+        event.preventDefault();
+        this.mainWin.commandPalette?.show();
+      } else if (cmdOrCtrl && input.shift && input.key === "T") {
+        event.preventDefault();
+        this.reopenClosedTab();
+      } else if (cmdOrCtrl && input.key === "w") {
+        event.preventDefault();
+      } else if (cmdOrCtrl && input.key >= "1" && input.key <= "9") {
+        event.preventDefault();
+        this.switchToTabByIndex(parseInt(input.key));
+      } else if (cmdOrCtrl && input.key === "ArrowLeft") {
+        event.preventDefault();
+        this.navigateBack();
+      } else if (cmdOrCtrl && input.key === "ArrowRight") {
+        event.preventDefault();
+        this.navigateForward();
+      }
     });
 
     this.switchToTab(id);
@@ -186,7 +206,32 @@ class TabManager extends EventEmitter {
     }
 
     view.webContents.loadURL(url);
+    view.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return;
 
+      const cmdOrCtrl =
+        process.platform === "darwin" ? input.meta : input.control;
+
+      if (cmdOrCtrl && input.key === "t" && !input.shift) {
+        event.preventDefault();
+        this.mainWin.commandPalette?.show();
+      } else if (cmdOrCtrl && input.shift && input.key === "T") {
+        event.preventDefault();
+        this.reopenClosedTab();
+      } else if (cmdOrCtrl && input.key === "w") {
+        event.preventDefault();
+        this.closeCurrentTab();
+      } else if (cmdOrCtrl && input.key >= "1" && input.key <= "9") {
+        event.preventDefault();
+        this.switchToTabByIndex(parseInt(input.key));
+      } else if (cmdOrCtrl && input.key === "ArrowLeft") {
+        event.preventDefault();
+        this.navigateBack();
+      } else if (cmdOrCtrl && input.key === "ArrowRight") {
+        event.preventDefault();
+        this.navigateForward();
+      }
+    });
     view.webContents.on("page-title-updated", (_e, title) => {
       tab.title = title;
       this.emit("tabs-changed");
@@ -231,7 +276,12 @@ class TabManager extends EventEmitter {
 
     this.insetView.addChildView(tab.view);
     this._fitTabToInset(tab.view);
-
+    if (this.mainWin && !this.mainWin.isDestroyed()) {
+      this.mainWin.focus();
+      if (tab.view && tab.view.webContents) {
+        tab.view.webContents.focus();
+      }
+    }
     this.activeTab = id;
     this.emit("tabs-changed");
   }

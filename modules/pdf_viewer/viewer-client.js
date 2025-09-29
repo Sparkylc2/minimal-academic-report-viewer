@@ -27,6 +27,7 @@ const pdfViewer = new pdfjsViewer.PDFViewer({
 linkService.setViewer(pdfViewer);
 
 let basePageGap = 32;
+let basePageRadius = 8;
 let pendingFit = "auto";
 
 ipcRenderer.on("viewer-config", (cfg) => {
@@ -45,6 +46,7 @@ ipcRenderer.on("viewer-config", (cfg) => {
     );
   }
   if (typeof cfg?.pageRadius === "number") {
+    basePageRadius = cfg.pageRadius;
     document.documentElement.style.setProperty(
       "--page-radius",
       `${cfg.pageRadius}px`,
@@ -162,9 +164,7 @@ eventBus.on("pagesinit", () => {
 });
 
 function updatePageGapForScale(scale) {
-  const scaledGap = basePageGap * scale;
-  document.documentElement.style.setProperty("--layout-scale", String(s));
-  document.documentElement.style.setProperty("--page-gap", `${scaledGap}px`);
+  document.documentElement.style.setProperty("--layout-scale", String(scale));
 }
 
 const MIN_SCALE = 0.1;
@@ -291,98 +291,35 @@ function endPinch() {
 
   const targetScale = Math.max(MIN_SCALE, Math.min(MAX_SCALE, cssScale || 1));
 
-  const anchorInfo = probePageAtClientPoint(lastPointer.x, lastPointer.y);
-
   const viewportRect = container.getBoundingClientRect();
   const pointerInViewport = {
     x: lastPointer.x - viewportRect.left,
     y: lastPointer.y - viewportRect.top,
   };
 
-  const scrollLeft = container.scrollLeft;
-  const scrollTop = container.scrollTop;
-  const pointerInContent = {
-    x: scrollLeft + pointerInViewport.x,
-    y: scrollTop + pointerInViewport.y,
-  };
+  const contentX =
+    (container.scrollLeft + pointerInViewport.x) / committedScale;
+  const contentY = (container.scrollTop + pointerInViewport.y) / committedScale;
 
   const overlay = makeFreezeOverlayFromVisibleCanvases();
-
-  const scaleRatio = targetScale / committedScale;
-
-  const newContentX = pointerInContent.x * scaleRatio;
-  const newContentY = pointerInContent.y * scaleRatio;
-  plannedLeft = newContentX - pointerInViewport.x;
-  plannedTop = newContentY - pointerInViewport.y;
-
-  commitLock = true;
 
   viewerEl.style.transform = "";
   viewerEl.style.transformOrigin = "";
   viewerEl.style.willChange = "";
 
   updatePageGapForScale(targetScale);
-
   pdfViewer.currentScale = targetScale;
+  const newScrollLeft = contentX * targetScale - pointerInViewport.x;
+  const newScrollTop = contentY * targetScale - pointerInViewport.y;
 
-  container.scrollLeft = plannedLeft;
-  container.scrollTop = plannedTop;
+  container.scrollLeft = newScrollLeft;
+  container.scrollTop = newScrollTop;
 
-  let finished = false;
-  let renderCount = 0;
-  const finalize = () => {
-    if (finished) return;
-    renderCount++;
-
-    if (renderCount < 1) return;
-
-    finished = true;
-    eventBus.off("updateviewarea", finalize);
-    eventBus.off("pagerendered", finalize);
-
-    if (anchorInfo && anchorInfo.pageNo) {
-      setTimeout(() => {
-        const pageEl2 = viewerEl.querySelector(
-          `.page[data-page-number="${anchorInfo.pageNo}"]`,
-        );
-        if (pageEl2) {
-          const newRect = pageEl2.getBoundingClientRect();
-          const targetX =
-            newRect.left +
-            (anchorInfo.pixelX * newRect.width) / anchorInfo.rect.width;
-          const targetY =
-            newRect.top +
-            (anchorInfo.pixelY * newRect.height) / anchorInfo.rect.height;
-          const dx = targetX - lastPointer.x;
-          const dy = targetY - lastPointer.y;
-          if (Math.abs(dx) > 0.01 || Math.abs(dy) > 0.01) {
-            plannedLeft = container.scrollLeft + dx;
-            plannedTop = container.scrollTop + dy;
-            container.scrollLeft = plannedLeft;
-            container.scrollTop = plannedTop;
-          }
-        }
-
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            commitLock = false;
-            removeFreezeOverlay(overlay);
-          });
-        });
-      }, 10);
-    } else {
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          commitLock = false;
-          removeFreezeOverlay(overlay);
-        });
-      });
-    }
-  };
-
-  eventBus.on("updateviewarea", finalize);
-  eventBus.on("pagerendered", finalize);
-  setTimeout(() => finalize(), 400);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      removeFreezeOverlay(overlay);
+    });
+  });
 }
 
 function applyCssPinchAtPointer(targetScaleCandidate) {
@@ -403,10 +340,8 @@ container.addEventListener(
     const isZoomGesture = e.ctrlKey || e.metaKey;
     if (!isZoomGesture) return;
     e.preventDefault();
-
+    lastPointer = { x: e.clientX, y: e.clientY };
     beginPinch();
-    lastPointer.x = e.clientX;
-    lastPointer.y = e.clientY;
 
     const unit = e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 800 : 1;
     wheelAccum += e.deltaY * unit;

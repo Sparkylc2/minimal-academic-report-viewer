@@ -225,53 +225,9 @@ function createWindow() {
 }
 
 function registerKeyboardShortcuts() {
-  // CMD+T - Open command palette for new tab
-  globalShortcut.register("CommandOrControl+F", () => {
-    if (mainWin && !mainWin.isDestroyed() && commandPalette) {
-      commandPalette.show();
-    }
-  });
-
-  // Alt+Shift+T - Reopen closed tab
-  globalShortcut.register("CommandOrControl+Shift+F", () => {
-    if (mainWin && !mainWin.isDestroyed() && tabManager) {
-      tabManager.reopenClosedTab();
-    }
-  });
-
-  // Cmd+W - Close current tab
-  globalShortcut.register("CommandOrControl+W", () => {
-    if (mainWin && !mainWin.isDestroyed() && tabManager) {
-      tabManager.closeCurrentTab();
-    }
-  });
-
-  // Cmd+1-9 - Switch tabs
-  for (let i = 1; i <= 9; i++) {
-    globalShortcut.register(`CommandOrControl+${i}`, () => {
-      if (mainWin && !mainWin.isDestroyed() && tabManager) {
-        tabManager.switchToTabByIndex(i);
-      }
-    });
-  }
-
-  // Cmd+R - Show/hide command palette (keep existing)
   globalShortcut.register("CommandOrControl+R", () => {
     if (mainWin && !mainWin.isDestroyed() && commandPalette) {
       commandPalette.toggle();
-    }
-  });
-
-  // Navigation shortcuts
-  globalShortcut.register("CommandOrControl+Left", () => {
-    if (mainWin && !mainWin.isDestroyed() && tabManager) {
-      tabManager.navigateBack();
-    }
-  });
-
-  globalShortcut.register("CommandOrControl+Right", () => {
-    if (mainWin && !mainWin.isDestroyed() && tabManager) {
-      tabManager.navigateForward();
     }
   });
 }

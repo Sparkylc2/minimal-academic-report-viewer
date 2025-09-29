@@ -77,14 +77,14 @@
       #viewer {
         background: var(--bg) !important;
         border-top: 1px solid transparent;
-        transform-origin: center center !important;
       }
 
       .pdfViewer .page {
         border-radius: calc(var(--page-radius) * var(--layout-scale));
-        margin: 0 auto var(--page-gap);
+        margin-bottom: calc(var(--page-gap) * var(--layout-scale));
         overflow: hidden;
-        background: #fff;
+        border: none !important;
+        box-shadow: none !important;
         contain: paint;
         backface-visibility: hidden;
         transform: translateZ(0);
