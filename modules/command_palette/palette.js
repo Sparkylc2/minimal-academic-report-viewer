@@ -124,7 +124,31 @@ class CommandPalette {
       this.createNewTabWithUrl(`https://${q}`);
     } else {
       const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
-      this.navigateToUrl(searchUrl);
+      this.createNewTabWithUrl(searchUrl);
+    }
+  }
+
+  handleInternalCommand(cmd) {
+    const parts = cmd.split(" ");
+    const command = parts[0].toLowerCase();
+
+    switch (command) {
+      case "close":
+        if (this.tabManager) {
+          this.tabManager.closeCurrentTab();
+        }
+        break;
+      case "pdf":
+        const pdfId = this.tabManager.getFirstPdfTab();
+        if (pdfId) {
+          this.tabManager.switchToTab(pdfId);
+        }
+        break;
+      case "tabs":
+        break;
+      default:
+        const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(":" + cmd)}`;
+        this.createNewTabWithUrl(searchUrl);
     }
   }
 
