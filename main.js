@@ -1,4 +1,3 @@
-// main.js
 const {
   app,
   BaseWindow,
@@ -14,6 +13,7 @@ const chokidar = require("chokidar");
 
 let CommandPalette = require("./modules/command_palette/palette");
 let TabManager = require("./modules/tab_manager");
+let TabBar = require("./modules/tab_bar/tab_bar");
 
 app.commandLine.appendSwitch("disable-pinch");
 // -------------------- argv helpers --------------------
@@ -69,7 +69,7 @@ const viewerConfig = {
   margins,
 };
 
-function isHiDPI() {
+function isHighDPI() {
   const scaleFactor = screen.getPrimaryDisplay().scaleFactor;
   return scaleFactor > 1;
 }
@@ -116,9 +116,11 @@ let mainWin = null;
 let watcher = null;
 let commandPalette = null;
 let tabManager = null;
+let tabBar = null;
 
 let pdfPath = null;
 let initialTarget = resolveInitialTarget(argv);
+let highDPI = false;
 
 // -------------------- file watching (global, single PDF) --------------------
 function watchFile(filePath) {
@@ -198,13 +200,16 @@ function createWindow() {
   });
 
   tabManager = new TabManager(mainWin, viewerConfig);
+
+  tabBar = new TabBar(mainWin, tabManager, highDPI, viewerConfig);
+  tabBar.show();
+
   commandPalette = new CommandPalette(mainWin, tabManager);
 
-  globalShortcut.register("CommandOrControl+R", () => {
-    if (mainWin && !mainWin.isDestroyed() && commandPalette) {
-      commandPalette.toggle();
-    }
-  });
+  mainWin.tabManager = tabManager;
+  mainWin.commandPalette = commandPalette;
+
+  registerKeyboardShortcuts();
 
   if (initialTarget) {
     if (initialTarget.endsWith(".pdf")) {
@@ -212,16 +217,73 @@ function createWindow() {
       ensurePdfTabLoaded(initialTarget);
       watchFile(initialTarget);
     } else {
-      tabManager.getOrCreateWebTab(initialTarget);
+      tabManager.createWebTab(initialTarget);
     }
   } else {
-    tabManager.getOrCreateWebTab("https://google.com");
+    tabManager.createWebTab("https://google.com");
   }
+}
+
+function registerKeyboardShortcuts() {
+  // CMD+T - Open command palette for new tab
+  globalShortcut.register("CommandOrControl+F", () => {
+    if (mainWin && !mainWin.isDestroyed() && commandPalette) {
+      commandPalette.show();
+    }
+  });
+
+  // Alt+Shift+T - Reopen closed tab
+  globalShortcut.register("CommandOrControl+Shift+F", () => {
+    if (mainWin && !mainWin.isDestroyed() && tabManager) {
+      tabManager.reopenClosedTab();
+    }
+  });
+
+  // Cmd+W - Close current tab
+  globalShortcut.register("CommandOrControl+W", () => {
+    if (mainWin && !mainWin.isDestroyed() && tabManager) {
+      tabManager.closeCurrentTab();
+    }
+  });
+
+  // Cmd+1-9 - Switch tabs
+  for (let i = 1; i <= 9; i++) {
+    globalShortcut.register(`CommandOrControl+${i}`, () => {
+      if (mainWin && !mainWin.isDestroyed() && tabManager) {
+        tabManager.switchToTabByIndex(i);
+      }
+    });
+  }
+
+  // Cmd+R - Show/hide command palette (keep existing)
+  globalShortcut.register("CommandOrControl+R", () => {
+    if (mainWin && !mainWin.isDestroyed() && commandPalette) {
+      commandPalette.toggle();
+    }
+  });
+
+  // Navigation shortcuts
+  globalShortcut.register("CommandOrControl+Left", () => {
+    if (mainWin && !mainWin.isDestroyed() && tabManager) {
+      tabManager.navigateBack();
+    }
+  });
+
+  globalShortcut.register("CommandOrControl+Right", () => {
+    if (mainWin && !mainWin.isDestroyed() && tabManager) {
+      tabManager.navigateForward();
+    }
+  });
+}
+
+function unregisterKeyboardShortcuts() {
+  globalShortcut.unregisterAll();
 }
 
 // -------------------- app lifecycle --------------------
 app.whenReady().then(() => {
-  if (isHiDPI()) {
+  highDPI = isHighDPI();
+  if (highDPI) {
     Object.keys(viewerConfig.margins).forEach((k) => {
       viewerConfig.margins[k] = Math.round(viewerConfig.margins[k] * 2);
     });
@@ -234,6 +296,7 @@ app.whenReady().then(() => {
         process.kill(ppid, 0);
       } catch {
         if (watcher) watcher.close();
+        unregisterKeyboardShortcuts();
         app.quit();
       }
     };
@@ -247,6 +310,7 @@ const keepAlive = {
 
 app.on("window-all-closed", () => {
   if (watcher) watcher.close();
+  unregisterKeyboardShortcuts();
   if (process.platform !== "darwin") app.quit();
 });
 
@@ -254,9 +318,14 @@ app.on("activate", () => {
   if (!mainWin) createWindow();
 });
 
+app.on("will-quit", () => {
+  unregisterKeyboardShortcuts();
+});
+
 // -------------------- IPC --------------------
 ipcMain.on("close-window", () => {
   if (watcher) watcher.close();
+  unregisterKeyboardShortcuts();
   app.quit();
 });
 

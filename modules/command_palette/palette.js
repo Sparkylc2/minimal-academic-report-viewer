@@ -93,7 +93,7 @@ class CommandPalette {
         if (lastWebId) {
           this.tabManager.switchToTab(lastWebId);
         } else {
-          this.tabManager.getOrCreateWebTab("https://google.com");
+          this.tabManager.createWebTab("https://google.com");
         }
         this.hide();
         break;
@@ -113,19 +113,24 @@ class CommandPalette {
 
     const q = query.trim();
 
+    if (q.startsWith(":")) {
+      this.handleInternalCommand(q.substring(1));
+      return;
+    }
+
     if (q.startsWith("http://") || q.startsWith("https://")) {
-      this.navigateToUrl(q);
+      this.createNewTabWithUrl(q);
     } else if (q.includes(".") && !q.includes(" ")) {
-      this.navigateToUrl(`https://${q}`);
+      this.createNewTabWithUrl(`https://${q}`);
     } else {
       const searchUrl = `https://www.google.com/search?q=${encodeURIComponent(q)}`;
       this.navigateToUrl(searchUrl);
     }
   }
 
-  navigateToUrl(url) {
+  createNewTabWithUrl(url) {
     if (this.tabManager) {
-      this.tabManager.getOrCreateWebTab(url);
+      this.tabManager.createWebTab(url);
     }
   }
 

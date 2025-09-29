@@ -7,11 +7,13 @@
       rel="stylesheet"
       href="../../node_modules/pdfjs-dist/web/pdf_viewer.css"
     />
+
     <style>
       :root {
         --bg: #181616;
         --page-gap: 32px;
         --page-radius: 8px;
+        --layout-scale: 1;
       }
 
       * {
@@ -27,20 +29,25 @@
         background: var(--bg);
         -webkit-user-select: none;
         overscroll-behavior: contain;
-        touch-action: none;
       }
 
       #clip {
         position: fixed;
         inset: 0;
         background: var(--bg);
-        border-radius: 8px;
+        border-bottom-left-radius: var(--page-radius);
+        border-bottom-right-radius: var(--page-radius);
         overflow: hidden;
-        clip-path: inset(0 round 8px);
+        clip-path: inset(0 0 0 0 round 0 0 8px 8px);
         contain: paint;
         isolation: isolate;
         transform: translateZ(0);
         will-change: clip-path, transform;
+
+        max-width: 100vw !important;
+        max-height: 100vh !important;
+        transform-style: preserve-3d !important;
+        perspective: 1000px !important;
       }
 
       #viewerFrame {
@@ -59,6 +66,7 @@
         scrollbar-gutter: stable both-edges;
         -webkit-overflow-scrolling: touch;
         scrollbar-width: none;
+        touch-action: pan-x pan-y;
       }
       #viewerContainer::-webkit-scrollbar {
         width: 0;
@@ -68,26 +76,31 @@
 
       #viewer {
         background: var(--bg) !important;
-        /* padding-top: var(--window-margin-top) !important; */
-        /* padding-bottom: var(--window-margin-bottom) !important; */
         border-top: 1px solid transparent;
+        transform-origin: center center !important;
       }
 
-      /* page rounding */
-      .pdfViewer .page,
+      .pdfViewer .page {
+        border-radius: calc(var(--page-radius) * var(--layout-scale));
+        margin: 0 auto var(--page-gap);
+        overflow: hidden;
+        background: #fff;
+        contain: paint;
+        backface-visibility: hidden;
+        transform: translateZ(0);
+      }
+
       .pdfViewer .page .canvasWrapper,
       .pdfViewer .page canvas,
       .pdfViewer .page .textLayer,
       .pdfViewer .page .annotationLayer {
-        border-radius: var(--page-radius);
+        border-radius: inherit;
+        overflow: hidden;
+        background-clip: padding-box;
       }
 
-      /* Inter-page spacing: only bottom margin; top/bottom window edges come from #viewer padding */
-      .pdfViewer .page {
-        margin: 0 auto var(--page-gap) auto !important;
-        box-shadow: none !important;
-        border: none !important;
-        background: #ffffff;
+      .pdfViewer .textLayer > div {
+        border-radius: 2px;
         overflow: hidden;
       }
       .pdfViewer .page:first-child {
@@ -95,6 +108,10 @@
       }
       .pdfViewer .page:last-child {
         margin-bottom: 0 !important;
+      }
+      .pdfViewer .page canvas {
+        backface-visibility: hidden;
+        transform: translateZ(0);
       }
 
       #freezeOverlay {
@@ -117,6 +134,6 @@
         </div>
       </div>
     </div>
-    <script src="./pdf-viewer-client.js" type="module"></script>
+    <script src="./viewer-client.js" type="module"></script>
   </body>
 </html>

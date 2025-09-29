@@ -163,10 +163,11 @@ eventBus.on("pagesinit", () => {
 
 function updatePageGapForScale(scale) {
   const scaledGap = basePageGap * scale;
+  document.documentElement.style.setProperty("--layout-scale", String(s));
   document.documentElement.style.setProperty("--page-gap", `${scaledGap}px`);
 }
 
-const MIN_SCALE = 0.4;
+const MIN_SCALE = 0.1;
 const MAX_SCALE = 6;
 const ZOOM_INTENSITY = 0.018;
 

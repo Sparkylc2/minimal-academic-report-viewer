@@ -46,7 +46,6 @@ class PDFViewer {
     this.view.webContents.send("viewer-config", this.config);
 
     this.view.webContents.send("load-pdf", filePath);
-
     this.watchFile(filePath);
 
     ipcMain.on("reload-pdf", this.reloadHandler);

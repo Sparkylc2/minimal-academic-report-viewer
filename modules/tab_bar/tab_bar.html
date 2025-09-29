@@ -1,0 +1,199 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      :root {
+        --bg: #181616;
+      }
+
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          sans-serif;
+        background: transparent;
+        user-select: none;
+        -webkit-app-region: drag;
+        height: 100%;
+        overflow: hidden;
+      }
+
+      .tab-bar {
+        display: flex;
+        align-items: center;
+        height: 100vh;
+        background: var(--bg);
+        padding: 0 0px;
+        gap: 2px;
+      }
+
+      .tab {
+        display: flex;
+        align-items: center;
+        height: 20px;
+        overflow: hidden;
+        padding: 0 10px;
+        background: transparent;
+        border-radius: 6px;
+        transition: all 0.15s ease;
+        cursor: pointer;
+        position: relative;
+        min-width: 5vw;
+        max-width: 12.5vw;
+        -webkit-app-region: no-drag;
+        transform: all 0.15s ease;
+      }
+
+      .tab .tab-num {
+        font-size: 12px;
+        font-weight: 500;
+        margin-right: 6px;
+        padding-left: 16px;
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      .tab.active .tab-num {
+        color: #fff;
+      }
+      .tab:hover {
+        color: #fff;
+      }
+
+      .tab:hover .tab-title {
+        color: #fff;
+      }
+
+      .tab.active {
+        max-width: 20vw;
+        color: #fff;
+      }
+
+      .tab.pdf-tab {
+        padding-left: 10px;
+        position: relative;
+      }
+      .pdf-tab .tab-title {
+        font-size: 12px;
+      }
+
+      .tab-title {
+        flex: 1;
+        color: rgba(255, 255, 255, 0.8);
+        font-size: 10px;
+        font-weight: 400;
+        white-space: nowrap;
+        overflow: hidden;
+        align-self: center;
+        text-overflow: ellipsis;
+      }
+
+      .tab.active .tab-title {
+        color: #fff;
+        font-size: 12px;
+      }
+      .new-tab {
+        width: 28px;
+        height: 28px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: all 0.15s;
+        -webkit-app-region: no-drag;
+      }
+
+      .new-tab:hover {
+        background: rgba(255, 255, 255, 0.05);
+      }
+
+      .new-tab svg {
+        width: 14px;
+        height: 14px;
+        stroke: rgba(255, 255, 255, 1);
+        color: rgba(255, 255, 255, 1);
+        stroke-width: 2;
+      }
+
+      .rounded-bar {
+        width: 0.2rem;
+        height: 20px;
+        background: #8d9a7e;
+        border-radius: 999px;
+        margin: 16px 0;
+        margin-left: 4px;
+        margin-right: 4px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="tab-bar" id="tabBar">
+      <div class="new-tab" id="newTab" title="New Tab (Alt+T)">
+        <svg viewBox="0 0 24 24" fill="none">
+          <path d="M12 5v14M5 12h14" stroke="currentColor" />
+        </svg>
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = window.electron;
+
+      let tabs = [];
+      let activeTabId = null;
+
+      function renderTabs() {
+        const tabBar = document.getElementById("tabBar");
+        const newTabBtn = document.getElementById("newTab");
+
+        tabBar.innerHTML = "";
+
+        tabs.forEach((tab, index) => {
+          const tabEl = document.createElement("div");
+          tabEl.className = `tab ${tab.id === activeTabId ? "active" : ""} ${tab.type === "pdf" ? "pdf-tab" : ""}`;
+          tabEl.dataset.id = tab.id;
+          tabEl.title = tab.title || tab.url || "New Tab";
+          tabEl.num = index + 1;
+
+          const title = document.createElement("div");
+          title.className = "tab-title";
+          title.textContent = tab.title || "Loading...";
+          tabEl.appendChild(title);
+
+          const num = document.createElement("div");
+          num.className = "tab-num";
+          num.textContent = index + 1;
+          tabEl.appendChild(num);
+
+          tabEl.onclick = () => {
+            ipcRenderer.send("tab-switch", tab.id);
+          };
+
+          tabBar.appendChild(tabEl);
+          if (index === 0 && tab.type === "pdf") {
+            const bar = document.createElement("div");
+            bar.className = "rounded-bar";
+            tabBar.appendChild(bar);
+          }
+        });
+
+        tabBar.appendChild(newTabBtn);
+      }
+
+      ipcRenderer.on("tabs-update", (tabsData) => {
+        tabs = tabsData.tabs;
+        activeTabId = tabsData.activeId;
+        renderTabs();
+      });
+
+      document.getElementById("newTab").onclick = () => {
+        ipcRenderer.send("tab-new");
+      };
+    </script>
+  </body>
+</html>
