@@ -134,22 +134,23 @@ class TabManager extends EventEmitter {
 
       const cmdOrCtrl =
         process.platform === "darwin" ? input.meta : input.control;
+      const key = (input.key || "").toLowerCase();
 
-      if (cmdOrCtrl && input.key === "t" && !input.shift) {
+      if (cmdOrCtrl && key === "t" && !input.shift) {
         event.preventDefault();
         this.mainWin.commandPalette?.show();
-      } else if (cmdOrCtrl && input.shift && input.key === "T") {
+      } else if (cmdOrCtrl && input.shift && key === "t") {
         event.preventDefault();
         this.reopenClosedTab();
-      } else if (cmdOrCtrl && input.key === "w") {
+      } else if (cmdOrCtrl && key === "w") {
         event.preventDefault();
-      } else if (cmdOrCtrl && input.key >= "1" && input.key <= "9") {
+      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
         event.preventDefault();
-        this.switchToTabByIndex(parseInt(input.key));
-      } else if (cmdOrCtrl && input.key === "ArrowLeft") {
+        this.switchToTabByIndex(parseInt(key, 10));
+      } else if (cmdOrCtrl && key === "arrowleft") {
         event.preventDefault();
         this.navigateBack();
-      } else if (cmdOrCtrl && input.key === "ArrowRight") {
+      } else if (cmdOrCtrl && key === "arrowright") {
         event.preventDefault();
         this.navigateForward();
       }
@@ -211,23 +212,24 @@ class TabManager extends EventEmitter {
 
       const cmdOrCtrl =
         process.platform === "darwin" ? input.meta : input.control;
+      const key = (input.key || "").toLowerCase();
 
-      if (cmdOrCtrl && input.key === "t" && !input.shift) {
+      if (cmdOrCtrl && key === "t" && !input.shift) {
         event.preventDefault();
         this.mainWin.commandPalette?.show();
-      } else if (cmdOrCtrl && input.shift && input.key === "T") {
+      } else if (cmdOrCtrl && input.shift && key === "t") {
         event.preventDefault();
         this.reopenClosedTab();
-      } else if (cmdOrCtrl && input.key === "w") {
+      } else if (cmdOrCtrl && key === "w") {
         event.preventDefault();
         this.closeCurrentTab();
-      } else if (cmdOrCtrl && input.key >= "1" && input.key <= "9") {
+      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
         event.preventDefault();
-        this.switchToTabByIndex(parseInt(input.key));
-      } else if (cmdOrCtrl && input.key === "ArrowLeft") {
+        this.switchToTabByIndex(parseInt(key, 10));
+      } else if (cmdOrCtrl && key === "arrowleft") {
         event.preventDefault();
         this.navigateBack();
-      } else if (cmdOrCtrl && input.key === "ArrowRight") {
+      } else if (cmdOrCtrl && key === "arrowright") {
         event.preventDefault();
         this.navigateForward();
       }

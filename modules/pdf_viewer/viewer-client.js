@@ -321,7 +321,16 @@ function endPinch() {
     });
   });
 }
+function schedulePinchCommit(delay = 140) {
+  clearTimeout(pinchEndTimer);
+  pinchEndTimer = setTimeout(endPinch, delay);
+}
 
+function centerPointerOnViewport() {
+  const rect = container.getBoundingClientRect();
+  lastPointer.x = rect.left + rect.width / 2;
+  lastPointer.y = rect.top + rect.height / 2;
+}
 function applyCssPinchAtPointer(targetScaleCandidate) {
   const target = Math.max(MIN_SCALE, Math.min(MAX_SCALE, targetScaleCandidate));
   const rect = container.getBoundingClientRect();
@@ -364,16 +373,51 @@ container.addEventListener(
 
 let panAnimationId = null;
 let panVelocity = { x: 0, y: 0 };
-const PAN_BASE_SPEED = 200;
+const PAN_BASE_SPEED = 3.5;
+const PAN_SPEED_MODIFIER = 2.5;
 const PAN_SMOOTH_FACTOR = 0.15;
+
 const activePanKeys = new Set();
 
-function getEffectiveScale() {
+const DIR_KEYS = new Set([
+  "h",
+  "j",
+  "k",
+  "l",
+  "arrowleft",
+  "arrowright",
+  "arrowup",
+  "arrowdown",
+]);
+
+let pageDigitBuffer = "";
+let pageDigitTimer = 0;
+const PAGE_BUFFER_TIMEOUT = 500;
+
+function isEditableTarget(el) {
+  if (!el) return false;
+  const tag = el.tagName?.toLowerCase();
   return (
-    (pinchActive
-      ? cssScale || pdfViewer.currentScale || 1
-      : pdfViewer.currentScale || 1) || 1
+    el.isContentEditable ||
+    tag === "input" ||
+    tag === "textarea" ||
+    tag === "select"
   );
+}
+
+function commitPageBuffer() {
+  if (!pageDigitBuffer) return;
+  const n = parseInt(pageDigitBuffer, 10);
+  const max = pdfViewer.pagesCount || 1;
+  if (!Number.isNaN(n)) {
+    const target = Math.min(Math.max(1, n), max);
+    pdfViewer.currentPageNumber = target;
+  }
+  pageDigitBuffer = "";
+}
+function anyDirKeyActive() {
+  for (const k of activePanKeys) if (DIR_KEYS.has(k)) return true;
+  return false;
 }
 
 function animatePan() {
@@ -383,44 +427,69 @@ function animatePan() {
     container.scrollLeft += panVelocity.x;
     container.scrollTop += panVelocity.y;
 
-    if (!activePanKeys.size) {
+    if (!anyDirKeyActive()) {
       panVelocity.x *= 1 - PAN_SMOOTH_FACTOR;
       panVelocity.y *= 1 - PAN_SMOOTH_FACTOR;
     }
+
     panAnimationId = requestAnimationFrame(animatePan);
   } else {
-    panVelocity.x = 0;
-    panVelocity.y = 0;
-    panAnimationId = null;
+    if (!anyDirKeyActive()) {
+      panVelocity.x = 0;
+      panVelocity.y = 0;
+      panAnimationId = null;
+      return;
+    }
+
+    panAnimationId = requestAnimationFrame(animatePan);
   }
 }
 
 function updatePanVelocity() {
-  const step = PAN_BASE_SPEED * getEffectiveScale();
+  const step =
+    PAN_BASE_SPEED * (activePanKeys.has("shift") ? PAN_SPEED_MODIFIER : 1);
 
   let targetVx = 0;
   let targetVy = 0;
 
-  if (activePanKeys.has("h")) targetVx -= step;
-  if (activePanKeys.has("l")) targetVx += step;
-  if (activePanKeys.has("k")) targetVy -= step;
-  if (activePanKeys.has("j")) targetVy += step;
+  if (activePanKeys.has("h") || activePanKeys.has("arrowleft"))
+    targetVx -= step;
+  if (activePanKeys.has("l") || activePanKeys.has("arrowright"))
+    targetVx += step;
+  if (activePanKeys.has("k") || activePanKeys.has("arrowup")) targetVy -= step;
+  if (activePanKeys.has("j") || activePanKeys.has("arrowdown"))
+    targetVy += step;
 
   panVelocity.x += (targetVx - panVelocity.x) * PAN_SMOOTH_FACTOR;
   panVelocity.y += (targetVy - panVelocity.y) * PAN_SMOOTH_FACTOR;
 
-  if (!panAnimationId && (targetVx || targetVy)) {
+  if (
+    !panAnimationId &&
+    (anyDirKeyActive() ||
+      Math.abs(panVelocity.x) > 0.1 ||
+      Math.abs(panVelocity.y) > 0.1)
+  ) {
     panAnimationId = requestAnimationFrame(animatePan);
   }
 }
 
 document.addEventListener("keydown", (e) => {
-  if (e.metaKey || e.ctrlKey || e.altKey) return;
-
   const key = e.key.toLowerCase();
 
-  if (["h", "j", "k", "l"].includes(key)) {
+  if (
+    [
+      "h",
+      "j",
+      "k",
+      "l",
+      "arrowleft",
+      "arrowright",
+      "arrowup",
+      "arrowdown",
+    ].includes(key)
+  ) {
     e.preventDefault();
+    if (e.shiftKey) activePanKeys.add("shift");
     if (!activePanKeys.has(key)) {
       activePanKeys.add(key);
       updatePanVelocity();
@@ -443,7 +512,19 @@ document.addEventListener("keydown", (e) => {
 
 document.addEventListener("keyup", (e) => {
   const key = e.key.toLowerCase();
-  if (["h", "j", "k", "l"].includes(key)) {
+  if (
+    [
+      "h",
+      "j",
+      "k",
+      "l",
+      "arrowleft",
+      "arrowright",
+      "arrowup",
+      "arrowdown",
+    ].includes(key)
+  ) {
+    if (!e.shiftKey) activePanKeys.delete("shift");
     activePanKeys.delete(key);
     updatePanVelocity();
   }
@@ -455,33 +536,57 @@ window.addEventListener("blur", () => {
 });
 
 document.addEventListener("keydown", (e) => {
+  if (e.defaultPrevented) return;
+  if (isEditableTarget(document.activeElement)) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+
+  const k = e.key;
+
+  if (k === "Enter") {
+    e.preventDefault();
+    if (pageDigitBuffer) {
+      commitPageBuffer();
+      return;
+    }
+    const max = pdfViewer.pagesCount || 1;
+    const curr = pdfViewer.currentPageNumber || 1;
+    const next = Math.min(Math.max(1, curr + (e.shiftKey ? -1 : 1)), max);
+    pdfViewer.currentPageNumber = next;
+    return;
+  }
+});
+
+document.addEventListener("keydown", (e) => {
   const mod = e.metaKey || e.ctrlKey;
   if (!mod) return;
 
-  const rect = container.getBoundingClientRect();
-  lastPointer.x = rect.left + rect.width / 2;
-  lastPointer.y = rect.top + rect.height / 2;
+  const key = e.key;
 
-  const curr = pdfViewer.currentScale || 1;
+  if (key === "=" || key === "+" || key === "-" || key === "_" || key === "0") {
+    e.preventDefault();
 
-  if (e.key === "=" || e.key === "+") {
-    e.preventDefault();
-    beginPinch();
-    committedScale = curr;
-    applyCssPinchAtPointer(Math.min(MAX_SCALE, curr * 1.2));
-    endPinch();
-  } else if (e.key === "-" || e.key === "_") {
-    e.preventDefault();
-    beginPinch();
-    committedScale = curr;
-    applyCssPinchAtPointer(Math.max(MIN_SCALE, curr / 1.2));
-    endPinch();
-  } else if (e.key === "0") {
-    e.preventDefault();
-    beginPinch();
-    committedScale = curr;
-    applyCssPinchAtPointer(1);
-    endPinch();
+    centerPointerOnViewport();
+
+    const currCommitted = pdfViewer.currentScale || 1;
+    const basis = pinchActive ? cssScale || currCommitted : currCommitted;
+
+    if (!pinchActive) {
+      beginPinch();
+      committedScale = currCommitted;
+    }
+
+    let target = basis;
+    if (key === "=" || key === "+") {
+      target = Math.min(MAX_SCALE, basis * 1.2);
+    } else if (key === "-" || key === "_") {
+      target = Math.max(MIN_SCALE, basis / 1.2);
+    } else if (key === "0") {
+      target = 1;
+    }
+
+    applyCssPinchAtPointer(target);
+
+    schedulePinchCommit(140);
   }
 });
 
