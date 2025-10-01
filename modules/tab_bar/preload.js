@@ -3,13 +3,19 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("electron", {
   ipcRenderer: {
     send: (channel, ...data) => {
-      const validChannels = ["tab-switch", "tab-close", "tab-new"];
+      const validChannels = [
+        "tab-switch",
+        "tab-close",
+        "tab-new",
+        "chat-toggle",
+        "chat-get-config",
+      ];
       if (validChannels.includes(channel)) {
         ipcRenderer.send(channel, ...data);
       }
     },
     on: (channel, fn) => {
-      const validChannels = ["tabs-update"];
+      const validChannels = ["tabs-update", "chat-config-update"];
       if (validChannels.includes(channel)) {
         ipcRenderer.on(channel, (_event, ...args) => fn(...args));
       }

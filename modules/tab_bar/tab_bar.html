@@ -8,9 +8,9 @@
         padding: 0;
         box-sizing: border-box;
       }
-
       :root {
         --bg: #181616;
+        --muted: rgba(255, 255, 255, 0.7);
       }
 
       body {
@@ -31,6 +31,7 @@
         background: var(--bg);
         padding: 0 0px;
         gap: 2px;
+        position: relative;
       }
 
       .tab {
@@ -49,7 +50,6 @@
         -webkit-app-region: no-drag;
         transform: all 0.15s ease;
       }
-
       .tab .tab-num {
         font-size: 12px;
         font-weight: 500;
@@ -57,18 +57,15 @@
         padding-left: 16px;
         color: rgba(255, 255, 255, 0.8);
       }
-
       .tab.active .tab-num {
         color: #fff;
       }
       .tab:hover {
         color: #fff;
       }
-
       .tab:hover .tab-title {
         color: #fff;
       }
-
       .tab.active {
         max-width: 20vw;
         color: #fff;
@@ -92,11 +89,11 @@
         align-self: center;
         text-overflow: ellipsis;
       }
-
       .tab.active .tab-title {
         color: #fff;
         font-size: 12px;
       }
+
       .new-tab {
         width: 28px;
         height: 28px;
@@ -108,11 +105,9 @@
         transition: all 0.15s;
         -webkit-app-region: no-drag;
       }
-
       .new-tab:hover {
         background: rgba(255, 255, 255, 0.05);
       }
-
       .new-tab svg {
         width: 14px;
         height: 14px;
@@ -130,6 +125,40 @@
         margin-left: 4px;
         margin-right: 4px;
       }
+
+      .ai-indicator {
+        position: absolute;
+        top: 0;
+        right: 6px;
+        height: 100%;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        -webkit-app-region: no-drag;
+      }
+      .ai-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 6px 8px;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        transition: background 0.15s ease;
+      }
+      .ai-chip:hover {
+        background: rgba(255, 255, 255, 0.06);
+      }
+      .ai-chip svg {
+        width: 14px;
+        height: 14px;
+        display: block;
+      }
+      .ai-chip .label {
+        font-size: 10px;
+        color: var(--muted);
+        letter-spacing: 0.2px;
+      }
     </style>
   </head>
   <body>
@@ -139,6 +168,13 @@
           <path d="M12 5v14M5 12h14" stroke="currentColor" />
         </svg>
       </div>
+
+      <!-- <div class="ai-indicator"> -->
+      <!--   <div class="ai-chip" id="aiChip" title="Open AI Chat"> -->
+      <!--     <span id="aiIcon"></span> -->
+      <!--     <span class="label" id="aiLabel">AI</span> -->
+      <!--   </div> -->
+      <!-- </div> -->
     </div>
 
     <script>
@@ -151,8 +187,8 @@
         const tabBar = document.getElementById("tabBar");
         const newTabBtn = document.getElementById("newTab");
 
+        const aiIndicator = document.querySelector(".ai-indicator");
         tabBar.innerHTML = "";
-
         tabs.forEach((tab, index) => {
           const tabEl = document.createElement("div");
           tabEl.className = `tab ${tab.id === activeTabId ? "active" : ""} ${tab.type === "pdf" ? "pdf-tab" : ""}`;
@@ -170,11 +206,9 @@
           num.textContent = index + 1;
           tabEl.appendChild(num);
 
-          tabEl.onclick = () => {
-            ipcRenderer.send("tab-switch", tab.id);
-          };
-
+          tabEl.onclick = () => ipcRenderer.send("tab-switch", tab.id);
           tabBar.appendChild(tabEl);
+
           if (index === 0 && tab.type === "pdf") {
             const bar = document.createElement("div");
             bar.className = "rounded-bar";
@@ -183,6 +217,7 @@
         });
 
         tabBar.appendChild(newTabBtn);
+        // tabBar.appendChild(aiIndicator);
       }
 
       ipcRenderer.on("tabs-update", (tabsData) => {
@@ -194,6 +229,50 @@
       document.getElementById("newTab").onclick = () => {
         ipcRenderer.send("tab-new");
       };
+
+      // ----- AI CHIP -----
+      // const aiChip = document.getElementById("aiChip");
+      // const aiIcon = document.getElementById("aiIcon");
+      // const aiLabel = document.getElementById("aiLabel");
+      //
+      // aiChip.addEventListener("click", () => {
+      //   // refresh provider each click (in case it changed), then open
+      //   ipcRenderer.send("chat-get-config");
+      //   ipcRenderer.send("chat-toggle");
+      // });
+      //
+      // function setAI(provider, model) {
+      //   const p = (provider || "").toLowerCase();
+      //   aiLabel.textContent = p === "anthropic" ? "Claude" : "OpenAI";
+      //   aiIcon.innerHTML = p === "anthropic" ? anthIcon() : openaiIcon();
+      //   aiChip.title = `AI: ${aiLabel.textContent}${model ? " · " + model : ""}`;
+      // }
+      //
+      // function openaiIcon() {
+      //   // minimal OpenAI-ish swirl (simple placeholder SVG)
+      //   return `<svg style='color: #fff;' viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      //     <path d="M12 2a5 5 0 00-5 5v1.1A4.5 4.5 0 005 12a4.5 4.5 0 004 4.47V19a5 5 0 007.9 4.1l.1-.06A5 5 0 0019 18v-1.1A4.5 4.5 0 0020 12a4.5 4.5 0 00-4-4.47V5a5 5 0 00-4-3z"/>
+      //   </svg>`;
+      // }
+      // function anthIcon() {
+      //   // minimal "A" glyph
+      //   return `<svg style='color: #fff;' viewBox="0 0 24 24" aria-hidden="true" fill="currentColor">
+      //     <path d="M12 3l8 18h-3l-1.8-4H8.8L7 21H4l8-18zm1.9 10l-1.9-4.3L10.1 13h3.8z"/>
+      //   </svg>`;
+      // }
+      //
+      // // ask main for the current config on load and keep synced when it replies
+      // function refreshAI() {
+      //   ipcRenderer.send("chat-get-config");
+      // }
+      // ipcRenderer.on("chat-config-update", (cfg) => {
+      //   setAI(cfg?.provider || "openai", cfg?.model || "");
+      // });
+      //
+      // // initial fetch
+      // refreshAI();
+      // // optional: occasional re-sync in case it changes from settings while hidden
+      // setInterval(refreshAI, 10000);
     </script>
   </body>
 </html>

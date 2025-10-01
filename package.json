@@ -1,10 +1,10 @@
 {
-  "name": "tex-pdf-viewer",
-  "version": "1.3.0",
-  "description": "Minimal PDF viewer for LaTeX (pdf.js with smooth pinch zoom)",
+  "name": "academic-report-viewer",
+  "version": "1.4.0",
+  "description": "A minimal PDF viewer with several features to completely streamline your report writing workflow.",
   "main": "main.js",
-  "productName": "TeX PDF Viewer",
-  "author": "Your Name",
+  "productName": "Academic Report Viewer",
+  "author": "Lukas",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
@@ -28,6 +28,7 @@
   },
   "dependencies": {
     "chokidar": "^4.0.3",
+    "fetch": "^1.1.0",
     "pdfjs-dist": "^5.4.149"
   },
   "bin": {

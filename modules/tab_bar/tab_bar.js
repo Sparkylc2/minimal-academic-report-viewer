@@ -5,8 +5,9 @@ class TabBar {
   constructor(mainWin, tabManager, isHighDPI, config) {
     this.mainWin = mainWin;
     this.tabManager = tabManager;
+    this.aiChat = null;
     this.view = null;
-    this.height = config?.margins?.height || (isHighDPI ? 32 : 16);
+    this.height = config?.margins?.top || (isHighDPI ? 32 : 16);
 
     this.create();
   }

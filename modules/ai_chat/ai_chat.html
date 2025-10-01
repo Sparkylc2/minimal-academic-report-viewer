@@ -1,0 +1,478 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>AI Chat</title>
+    <meta
+      http-equiv="Content-Security-Policy"
+      content="default-src 'self'; style-src 'unsafe-inline' 'self'; img-src 'self' data:; script-src 'self' 'unsafe-inline'"
+    />
+    <style>
+      :root {
+        --bg: #181616;
+        --outline: #181616;
+        --btn-hover-color: #98bb6c;
+        --text: #e6e1dc;
+        --muted: #9e9a96;
+        --accent: #8ab4ff;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        margin: 0;
+        height: 100%;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          Segoe UI,
+          Roboto,
+          "Helvetica Neue",
+          Arial,
+          "Apple Color Emoji",
+          "Segoe UI Emoji";
+        color: var(--text);
+        background: transparent;
+      }
+      .chat {
+        width: 100%;
+        height: 100%;
+        border-radius: 12px;
+        overflow: hidden;
+        background: var(--bg);
+        border: 1px solid var(--outline);
+        display: flex;
+        flex-direction: column;
+      }
+      .chat-header {
+        padding: 12px;
+        background: var(--bg);
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-radius: 12px 12px 0 0;
+      }
+      .chat-header.draggable {
+        -webkit-app-region: drag;
+      }
+      .chat-title {
+        font-weight: 600;
+        font-size: 14px;
+        letter-spacing: 0.2px;
+      }
+      .header-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .header-btn {
+        -webkit-app-region: no-drag;
+        border: none;
+        background: var(--bg);
+        padding: 6px;
+        border-radius: 8px;
+        line-height: 0;
+        cursor: pointer;
+        outline: none;
+        transition: background 120ms ease;
+      }
+      .header-btn:hover {
+        background: var(--btn-hover-color);
+      }
+      .header-btn:active {
+        transform: translateY(1px);
+      }
+      .header-btn svg {
+        width: 16px;
+        height: 16px;
+        fill: var(--text);
+        opacity: 0.95;
+      }
+
+      .chat-body {
+        flex: 1 1 auto;
+        overflow: auto;
+        padding: 12px;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        background: var(--bg);
+      }
+      .msg {
+        background: var(--bg);
+        border: none;
+        border-radius: 8px;
+        padding: 10px 12px;
+        font-size: 13px;
+        line-height: 1.35;
+        white-space: pre-wrap;
+      }
+      .msg.user {
+      }
+      .msg.assistant {
+      }
+      .msg.error {
+        color: #ff8585;
+      }
+
+      .chat-input {
+        background: var(--bg);
+        padding: 10px;
+        display: flex;
+        gap: 8px;
+        align-items: flex-end;
+        border-top: 1px solid rgba(255, 255, 255, 0.03);
+      }
+      textarea {
+        flex: 1 1 auto;
+        resize: none;
+        min-height: 40px;
+        max-height: 160px;
+        background: var(--bg);
+        color: var(--text);
+        border: none;
+        border-radius: 10px;
+        padding: 10px 12px;
+        outline: none;
+      }
+      textarea:focus {
+        outline: none;
+      }
+
+      .send-btn {
+        -webkit-app-region: no-drag;
+        padding: 10px 12px;
+        border-radius: 10px;
+        border: none;
+        background: var(--bg);
+        color: var(--text);
+        cursor: pointer;
+        transition: background 120ms ease;
+      }
+      .send-btn:hover {
+        background: var(--btn-hover-color);
+      }
+
+      .modal {
+        position: absolute;
+        inset: 0;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        background: rgba(0, 0, 0, 0.35);
+      }
+      .modal.open {
+        display: flex;
+      }
+      .modal-card {
+        width: 480px;
+        background: var(--bg);
+        border: 1px solid var(--outline);
+        border-radius: 12px;
+        padding: 16px;
+      }
+      .row {
+        display: flex;
+        gap: 8px;
+        margin-bottom: 10px;
+        align-items: center;
+      }
+      .row label {
+        width: 120px;
+        font-size: 12px;
+        color: var(--muted);
+      }
+      .row input,
+      .row select {
+        flex: 1;
+        background: var(--bg);
+        color: var(--text);
+        border: none;
+        border-radius: 8px;
+        padding: 8px 10px;
+        outline: none;
+        height: 34px;
+      }
+      .row small {
+        color: var(--muted);
+      }
+      .right {
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .hint {
+        font-size: 12px;
+        color: var(--muted);
+        margin-top: 6px;
+      }
+      .inline {
+        display: flex;
+        gap: 8px;
+        align-items: center;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="chat">
+      <div class="chat-header" id="chatHeader">
+        <div class="chat-title">AI</div>
+        <div class="header-actions">
+          <button class="header-btn" id="pinBtn" title="Pin (mode: none)">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M14 2l8 8-3 3-2-2-5 5v3h-2v-4l5-5-2-2 3-3z" />
+            </svg>
+          </button>
+          <button class="header-btn" id="settingsBtn" title="Settings">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M12 8a4 4 0 110 8 4 4 0 010-8zm10 4l-2 1 1 2-2 2-2-1-1 2h-4l-1-2-2 1-2-2 1-2-2-1V8l2-1-1-2 2-2 2 1 1-2h4l1 2 2-1 2 2-1 2 2 1v4z"
+              />
+            </svg>
+          </button>
+          <button class="header-btn" id="clearBtn" title="Clear">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path d="M3 6h18v2H3V6zm3 4h12l-1.5 10h-9L6 10zm4-6h4v2h-4V4z" />
+            </svg>
+          </button>
+          <button class="header-btn" id="closeBtn" title="Close">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M18.3 5.71L12 12.01 5.7 5.7 4.29 7.11 10.6 13.4l-6.3 6.3 1.41 1.41 6.29-6.29 6.3 6.29 1.41-1.41-6.29-6.3 6.29-6.29z"
+              />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div class="chat-body" id="messages"></div>
+
+      <div class="chat-input">
+        <textarea id="input" placeholder="Ask anything…"></textarea>
+        <button class="send-btn" id="sendBtn">Send</button>
+      </div>
+
+      <div class="modal" id="settingsModal" aria-hidden="true">
+        <div class="modal-card">
+          <div class="row">
+            <label>Provider</label>
+            <select id="cfgProvider">
+              <option value="openai">OpenAI</option>
+              <option value="anthropic">Anthropic</option>
+            </select>
+          </div>
+
+          <div class="row">
+            <label>Model</label>
+            <div class="inline" style="flex: 1">
+              <select id="cfgModelSelect" style="flex: 1">
+                <option value="">(fetch models…)</option>
+              </select>
+              <button
+                class="send-btn"
+                id="refreshModels"
+                title="Refresh models"
+              >
+                Refresh
+              </button>
+            </div>
+          </div>
+
+          <div class="row">
+            <label>API Key</label>
+            <input id="cfgKey" type="password" placeholder="sk-..." />
+          </div>
+
+          <div class="row">
+            <label>Theme</label>
+            <select id="cfgTheme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </div>
+
+          <div class="hint">
+            Keys are stored locally in your user data folder and encrypted when
+            supported by the OS key APIs.
+          </div>
+
+          <div class="row right" style="margin-top: 14px">
+            <button class="send-btn" id="saveCfg">Save</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = window.electron;
+
+      const messagesEl = document.getElementById("messages");
+      const inputEl = document.getElementById("input");
+      const sendBtn = document.getElementById("sendBtn");
+      const closeBtn = document.getElementById("closeBtn");
+      const clearBtn = document.getElementById("clearBtn");
+      const settingsBtn = document.getElementById("settingsBtn");
+      const pinBtn = document.getElementById("pinBtn");
+      const chatHeader = document.getElementById("chatHeader");
+
+      const settingsModal = document.getElementById("settingsModal");
+      const cfgProvider = document.getElementById("cfgProvider");
+      const cfgModelSel = document.getElementById("cfgModelSelect");
+      const cfgKey = document.getElementById("cfgKey");
+      const cfgTheme = document.getElementById("cfgTheme");
+      const saveCfg = document.getElementById("saveCfg");
+      const refreshModels = document.getElementById("refreshModels");
+
+      let pinMode = "none";
+      let currentConfig = { provider: "openai", model: "", hasKey: false };
+
+      function addMessage(role, text, kind) {
+        const div = document.createElement("div");
+        div.className = `msg ${role}${kind ? " " + kind : ""}`;
+        div.textContent = text;
+        messagesEl.appendChild(div);
+        messagesEl.scrollTop = messagesEl.scrollHeight;
+      }
+
+      function sendCurrent() {
+        const text = inputEl.value.trim();
+        if (!text) return;
+        addMessage("user", text);
+        inputEl.value = "";
+        ipcRenderer.send("chat-send", { text });
+      }
+
+      function cyclePinMode() {
+        pinMode =
+          pinMode === "none" ? "fixed" : pinMode === "fixed" ? "smart" : "none";
+        pinBtn.title = `Pin (mode: ${pinMode})`;
+        ipcRenderer.send("chat-pin", { mode: pinMode });
+        chatHeader.classList.toggle("draggable", pinMode === "none");
+      }
+
+      // ---------- models ----------
+      function requestModels() {
+        const provider = cfgProvider.value || "openai";
+        const key = cfgKey.value.trim();
+        cfgModelSel.innerHTML = `<option value="">(fetching…)</option>`;
+        ipcRenderer.send("chat-list-models", {
+          provider,
+          apiKey: key || undefined,
+        });
+      }
+      function populateModels(list, preselect) {
+        cfgModelSel.innerHTML = "";
+        const opt = (id) => {
+          const o = document.createElement("option");
+          o.value = id;
+          o.textContent = id;
+          return o;
+        };
+        if (!list || !list.length) {
+          cfgModelSel.appendChild(opt("(no models returned)"));
+          cfgModelSel.disabled = true;
+          return;
+        }
+        cfgModelSel.disabled = false;
+        list.forEach((id) => cfgModelSel.appendChild(opt(id)));
+        if (preselect && list.includes(preselect)) {
+          cfgModelSel.value = preselect;
+        } else if (!cfgModelSel.value) {
+          cfgModelSel.value = list[0];
+        }
+      }
+
+      // ---------- UI events ----------
+      sendBtn.addEventListener("click", sendCurrent);
+      inputEl.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === "Enter") sendCurrent();
+      });
+      closeBtn.addEventListener("click", () => ipcRenderer.send("chat-hide"));
+      clearBtn.addEventListener("click", () => {
+        messagesEl.innerHTML = "";
+      });
+
+      settingsBtn.addEventListener("click", () => {
+        settingsModal.classList.add("open");
+        settingsModal.setAttribute("aria-hidden", "false");
+        if (cfgKey.value.trim() || currentConfig.hasKey) requestModels();
+      });
+      settingsModal.addEventListener("click", (e) => {
+        if (e.target === settingsModal) {
+          settingsModal.classList.remove("open");
+          settingsModal.setAttribute("aria-hidden", "true");
+        }
+      });
+
+      refreshModels.addEventListener("click", requestModels);
+      cfgProvider.addEventListener("change", requestModels);
+
+      saveCfg.addEventListener("click", () => {
+        const updates = {
+          provider: cfgProvider.value || "openai",
+          model: cfgModelSel.value || "",
+          apiKey: cfgKey.value.trim() || null,
+          theme: cfgTheme.value || "dark",
+        };
+        ipcRenderer.send("chat-save-config", updates);
+        settingsModal.classList.remove("open");
+        settingsModal.setAttribute("aria-hidden", "true");
+      });
+
+      pinBtn.addEventListener("click", cyclePinMode);
+
+      // ---------- IPC listeners ----------
+      ipcRenderer.on("chat-reply", (payload) => {
+        if (payload?.text) addMessage("assistant", payload.text);
+      });
+      ipcRenderer.on("chat-error", (msg) => {
+        addMessage("assistant", `⚠️ ${msg}`, "error");
+      });
+
+      ipcRenderer.on("chat-config-update", (cfg) => {
+        currentConfig = cfg || {};
+        cfgProvider.value = currentConfig.provider || "openai";
+        cfgTheme.value = currentConfig.theme || "dark";
+
+        if (currentConfig.model) {
+          const option = [...cfgModelSel.options].find(
+            (o) => o.value === currentConfig.model,
+          );
+          if (option) cfgModelSel.value = currentConfig.model;
+        }
+      });
+
+      ipcRenderer.on("chat-config-saved", (_payload) => {});
+
+      ipcRenderer.on("chat-show", () => {
+        ipcRenderer.send("chat-get-config");
+        chatHeader.classList.toggle("draggable", pinMode === "none");
+      });
+
+      ipcRenderer.on("chat-pin-update", (payload) => {
+        if (payload?.mode) {
+          pinMode = payload.mode;
+          pinBtn.title = `Pin (mode: ${pinMode})`;
+        }
+        chatHeader.classList.toggle(
+          "draggable",
+          payload?.draggable === true || pinMode === "none",
+        );
+      });
+
+      ipcRenderer.on("chat-models", (payload) => {
+        if (payload?.error) {
+          populateModels([], null);
+          addMessage("assistant", `⚠️ ${payload.error}`, "error");
+          return;
+        }
+        const list = payload?.models || [];
+        populateModels(list, currentConfig.model);
+      });
+
+      ipcRenderer.send("chat-get-config");
+    </script>
+  </body>
+</html>

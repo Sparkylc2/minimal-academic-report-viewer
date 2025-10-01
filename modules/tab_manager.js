@@ -104,7 +104,7 @@ class TabManager extends EventEmitter {
         offscreen: false,
       },
     });
-    // view.webContents.openDevTools({ mode: "detach" });
+    view.webContents.openDevTools({ mode: "detach" });
     try {
       view.webContents.setBackgroundColor("#00000000");
     } catch {}

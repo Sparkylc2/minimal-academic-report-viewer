@@ -14,6 +14,7 @@ const chokidar = require("chokidar");
 let CommandPalette = require("./modules/command_palette/palette");
 let TabManager = require("./modules/tab_manager");
 let TabBar = require("./modules/tab_bar/tab_bar");
+let AIChat = require("./modules/ai_chat/ai_chat");
 
 app.commandLine.appendSwitch("disable-pinch");
 // -------------------- argv helpers --------------------
@@ -117,6 +118,7 @@ let watcher = null;
 let commandPalette = null;
 let tabManager = null;
 let tabBar = null;
+let aiChat = null;
 
 let pdfPath = null;
 let initialTarget = resolveInitialTarget(argv);
@@ -206,6 +208,8 @@ function createWindow() {
 
   commandPalette = new CommandPalette(mainWin, tabManager);
 
+  aiChat = new AIChat(mainWin, viewerConfig);
+
   mainWin.tabManager = tabManager;
   mainWin.commandPalette = commandPalette;
 
@@ -266,6 +270,7 @@ const keepAlive = {
 
 app.on("window-all-closed", () => {
   if (watcher) watcher.close();
+  if (aiChat) aiChat.destroy();
   unregisterKeyboardShortcuts();
   if (process.platform !== "darwin") app.quit();
 });
@@ -279,6 +284,7 @@ app.on("will-quit", () => {
 });
 
 // -------------------- IPC --------------------
+
 ipcMain.on("close-window", () => {
   if (watcher) watcher.close();
   unregisterKeyboardShortcuts();
