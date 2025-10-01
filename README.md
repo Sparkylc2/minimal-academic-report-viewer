@@ -12,6 +12,11 @@ The whole idea is to create a lightweight, somewhat all in one tool to use while
 As an addendum, I was lazy and haven't fully integrated the `bg` option, but altering that is as simple as changing the background colour in the respective HTML file.
 
 
+<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 54 46" src="https://github.com/user-attachments/assets/9bf064ce-430b-4e67-b7f7-de61a8034c6a" />
+<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 54 54" src="https://github.com/user-attachments/assets/630408cf-9a67-4e1e-b88f-7ad204688516" />
+<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 55 15" src="https://github.com/user-attachments/assets/5999e293-b344-4877-b143-a5990bf77da2" />
+
+
 ## Features 
 - Minimalist design throughout
 - Globally bound search palette to quickly look up queries right in the viewer or in any other application while the viewer is open (`Cmd + P`)
