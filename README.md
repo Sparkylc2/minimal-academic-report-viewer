@@ -1,14 +1,27 @@
 ## About
-This viewer is about as minimal as it gets. It has no title-bar, traffic light controls, menu-bar or toolbars. It is just a window for previewing PDFs (you can view traffic light controls by hovering over the top left of the window). I threw this together because I was annoyed that there seemed to be none available, and as my Kitty terminal is also borderless, I wanted something that would fit in with it. The viewer accepts vim controls (HJKL, g and G) and the standard zoom in, zoom out keybindings (Cmd + = and Cmd + -). You can also pan with the arrow keys. It has smooth scrolling and zooming (what a pain to implement).
+This viewer is about as minimal as it gets. It has no title-bar, traffic light controls, menu-bar or toolbars. It is just a window for previewing PDFs (you can view traffic light controls by hovering over the top left of the window). I threw this together initially because I was annoyed that there seemed to be none available, and as my Kitty terminal is also borderless, I wanted something that would fit in with it. The viewer has grown since then into something larger.
 
-70% of this has been vibe coded so I make no performance promises ;)
+The viewer accepts vim controls (`hjkl/HJKL`, `g` and `G`) and the standard zoom in, zoom out keybindings (`Cmd + equals` and `Cmd + minus`). You can also pan with the arrow keys. To move forward or backward an entire page, just use `Enter` or `Shift+Enter` (to go back). A new tab system means you can search for multiple things at once, and switch between them with `Cmd + 1-9`. You can open a new tab with `Cmd + t` (/open a previously closed one with `Cmd+T`) and close the current tab with `Cmd + w`.
 
+
+The purpose of this project was for me to have a personalized tool to use while writing reports. As such some parts of this project are not fully developed,
+or are maybe rough around the edges (eg. not having more of a gui nor having detailed instructions on its use). If you want to contribute, please do so.
+
+The whole idea is to create a lightweight, somewhat all in one tool to use while report writing, with a heavy keyboard only focus.
+
+As an addendum, I was lazy and haven't fully integrated the `bg` option, but altering that is as simple as changing the background colour in the respective HTML file.
+
+
+## Features 
+- Minimalist design throughout
+- Globally bound search palette to quickly look up queries right in the viewer or in any other application while the viewer is open (`Cmd + P`)
+- Tab system with keybindings to switch, open and close tabs (`Cmd + t`, `Cmd + T`, `Cmd + w`, `Cmd + 1-9`)
 
 ## Config 
 
-To use this pdf viewer, clone it wherever, cd in, and run `npm install` and then `npm link`. It will create a command called `pdfview` which you can then run from wherever.
+To use this viewer, clone it wherever, `cd` in, and run `npm install` and then `npm link`. It will create a command called `arview` which you can then run from wherever.
 
-If you want to configure it further, change colors etc. etc. you can either pass a few params in as args (namely `--pageGap`, `--pageRadius`, `--fit`, `--bg`, `--marginTop`, `--marginLeft`, `--marginRight`, and `--marginBottom`). `--fit` takes either `width`, `height` or `auto`. The others take numbers, or a hex string (for `bg`).
+If you want to configure it further, change colors etc. etc. you can either pass a few params in as args (namely `pageGap`, `pageRadius`, `fit`, `bg`, `marginTop`, `marginLeft`, `marginRight`, and `marginBottom`). `fit` takes either `width`, `height` or `auto`. The others take numbers, or a hex string (for `bg`).
 
 Any other customization can be done just by editing the files.
 If you want to rebind hjkl to something else, you can do that here in `index.html` (and you can increase the pan speed as well):
@@ -20,6 +33,7 @@ if (activePanKeys.has("h")) targetVx -= PAN_SPEED;
 
 ```
 
+
 ## Neovim stuff
 When using this with neovim, you can use the following set up. I havent tested this with literally any other setup so whether it works or not is unknown.
 
@@ -30,7 +44,7 @@ When using this with neovim, you can use the following set up. I havent tested t
     event = "VeryLazy",
     init = function()
         vim.g.vimtex_view_method = "general"
-        vim.g.vimtex_view_general_viewer = "pdfview"
+        vim.g.vimtex_view_general_viewer = "arview"
 
 			vim.g.vimtex_view_general_options = ("--ppid %d @pdf"):format(vim.fn.getpid())
 

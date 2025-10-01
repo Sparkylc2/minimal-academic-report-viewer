@@ -32,11 +32,11 @@
     "pdfjs-dist": "^5.4.149"
   },
   "bin": {
-    "pdfview": "./cli.js"
+    "arview": "./cli.js"
   },
   "build": {
-    "appId": "com.yourname.texpdfviewer",
-    "productName": "TeX PDF Viewer",
+    "appId": "com.sparkylc2.academic-report-viewer",
+    "productName": "Academic Report Viewer",
     "directories": {
       "output": "dist"
     },
