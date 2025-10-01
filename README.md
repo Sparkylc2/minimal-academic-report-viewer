@@ -1,4 +1,12 @@
 ## About
+
+
+<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 54 46" src="https://github.com/user-attachments/assets/9bf064ce-430b-4e67-b7f7-de61a8034c6a" />
+<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 54 54" src="https://github.com/user-attachments/assets/630408cf-9a67-4e1e-b88f-7ad204688516" />
+<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 55 15" src="https://github.com/user-attachments/assets/5999e293-b344-4877-b143-a5990bf77da2" />
+
+
+
 This viewer is about as minimal as it gets. It has no title-bar, traffic light controls, menu-bar or toolbars. It is just a window for previewing PDFs (you can view traffic light controls by hovering over the top left of the window). I threw this together initially because I was annoyed that there seemed to be none available, and as my Kitty terminal is also borderless, I wanted something that would fit in with it. The viewer has grown since then into something larger.
 
 The viewer accepts vim controls (`hjkl/HJKL`, `g` and `G`) and the standard zoom in, zoom out keybindings (`Cmd + equals` and `Cmd + minus`). You can also pan with the arrow keys. To move forward or backward an entire page, just use `Enter` or `Shift+Enter` (to go back). A new tab system means you can search for multiple things at once, and switch between them with `Cmd + 1-9`. You can open a new tab with `Cmd + t` (/open a previously closed one with `Cmd+T`) and close the current tab with `Cmd + w`.
@@ -10,11 +18,6 @@ or are maybe rough around the edges (eg. not having more of a gui nor having det
 The whole idea is to create a lightweight, somewhat all in one tool to use while report writing, with a heavy keyboard only focus.
 
 As an addendum, I was lazy and haven't fully integrated the `bg` option, but altering that is as simple as changing the background colour in the respective HTML file.
-
-
-<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 54 46" src="https://github.com/user-attachments/assets/9bf064ce-430b-4e67-b7f7-de61a8034c6a" />
-<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 54 54" src="https://github.com/user-attachments/assets/630408cf-9a67-4e1e-b88f-7ad204688516" />
-<img width="1512" height="982" alt="Screenshot 2025-10-01 at 13 55 15" src="https://github.com/user-attachments/assets/5999e293-b344-4877-b143-a5990bf77da2" />
 
 
 ## Features 
