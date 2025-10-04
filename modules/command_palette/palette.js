@@ -2,11 +2,12 @@ const { BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
 
 class CommandPalette {
-  constructor(parentWindow, tabManager) {
+  constructor(parentWindow, tabManager, config) {
     this.parentWin = parentWindow;
     this.paletteWin = null;
     this.isVisible = false;
     this.tabManager = tabManager;
+    this.config = config || {};
     this.setupIPC();
   }
 
@@ -50,6 +51,16 @@ class CommandPalette {
     });
 
     this.parentWin.on("move", () => {
+      if (this.paletteWin && !this.paletteWin.isDestroyed()) {
+        const p = this.parentWin.getBounds();
+        this.paletteWin.setBounds({
+          x: Math.round(p.x + (p.width - width) / 2),
+          y: Math.round(p.y + 120),
+        });
+      }
+    });
+
+    this.parentWin.on("resize", () => {
       if (this.paletteWin && !this.paletteWin.isDestroyed()) {
         const p = this.parentWin.getBounds();
         this.paletteWin.setBounds({

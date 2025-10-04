@@ -1,0 +1,729 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      :root {
+        --bg: #181616;
+        --muted: #3a3939;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          sans-serif;
+        background: transparent;
+        user-select: none;
+        overflow: hidden;
+      }
+
+      .quicklist-container {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: #181616;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+      }
+
+      .context-header {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--muted);
+        color: #fff;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .list-container {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+      }
+
+      .link-item {
+        display: flex;
+        align-items: center;
+        padding: 12px;
+        margin-bottom: 4px;
+        background: var(--bg);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        position: relative;
+      }
+
+      .link-item.active {
+        background: var(--muted);
+      }
+
+      .link-item.editing-title .link-title {
+        display: none;
+      }
+
+      .link-item.editing-title .title-input {
+        display: block;
+      }
+
+      .hl {
+        background: rgba(138, 180, 255, 0.35);
+        border-radius: 2px;
+      }
+
+      .link-content {
+        flex: 1;
+        overflow: hidden;
+      }
+
+      .link-title {
+        color: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .link-url {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 12px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .title-input {
+        display: none;
+        width: 100%;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #fff;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 14px;
+        outline: none;
+      }
+
+      .search-container {
+        background: var(--bg);
+        padding: 15px 20px;
+        border-top: 1px solid var(--muted);
+      }
+
+      #searchInput {
+        border: none;
+        width: 100%;
+        background: var(--bg);
+        color: #fff;
+        padding: 10px 15px;
+        border-radius: 6px;
+        font-size: 14px;
+        outline: none;
+        box-shadow: none;
+        border: 1px solid var(--muted);
+      }
+
+      #searchInput:focus {
+        outline: none;
+        box-shadow: none;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+      }
+
+      #searchInput::placeholder {
+        color: var(--muted);
+      }
+
+      #searchInput:focus::placeholder {
+        color: rgba(255, 255, 255, 0.5);
+      }
+
+      .list-container::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .list-container::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+      }
+
+      .list-container::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+      }
+
+      .list-container::-webkit-scrollbar-thumb:hover {
+        background: rgba(255, 255, 255, 0.3);
+      }
+
+      .confirm-overlay {
+        position: absolute;
+        inset: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: none;
+        align-items: center;
+        justify-content: center;
+        z-index: 9999;
+      }
+      .confirm-overlay.visible {
+        display: flex;
+      }
+      .confirm-modal {
+        width: 520px;
+        max-height: 70vh;
+        background: #201e1e;
+        border: 1px solid var(--muted);
+        border-radius: 8px;
+        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+        overflow: hidden;
+        display: flex;
+        flex-direction: column;
+      }
+      .confirm-header {
+        padding: 10px 14px;
+        border-bottom: 1px solid var(--muted);
+        color: #fff;
+        font-size: 13px;
+        letter-spacing: 0.3px;
+        text-transform: uppercase;
+      }
+      .confirm-body {
+        padding: 12px 14px;
+        color: #eaeaea;
+        font-size: 13px;
+        line-height: 1.4;
+      }
+      .confirm-list {
+        margin-top: 8px;
+        padding-left: 16px;
+        max-height: 36vh;
+        overflow: auto;
+      }
+      .confirm-list li {
+        margin: 2px 0;
+      }
+      .confirm-footer {
+        padding: 10px 14px;
+        border-top: 1px solid var(--muted);
+        display: flex;
+        gap: 8px;
+        justify-content: flex-end;
+      }
+      .btn {
+        border: 1px solid var(--muted);
+        background: #2a2828;
+        color: #fff;
+        padding: 6px 12px;
+        border-radius: 6px;
+        font-size: 13px;
+        cursor: pointer;
+      }
+      .btn:focus {
+        outline: none;
+      }
+      .btn-primary {
+        background: #8d9a7e;
+      }
+      .btn-row-hint {
+        margin-left: auto;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+        align-self: center;
+      }
+      .kbd {
+        padding: 2px 6px;
+        border: 1px solid var(--muted);
+        border-bottom-width: 2px;
+        border-radius: 4px;
+        background: #1b1a1a;
+        font-family:
+          ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas,
+          "Liberation Mono", "Courier New", monospace;
+        font-size: 12px;
+        color: #ddd;
+      }
+
+      .quicklist-container {
+        opacity: 0;
+        transform: translateY(-12px);
+        transition:
+          opacity 160ms ease-out,
+          transform 160ms ease-out;
+      }
+      .quicklist-container.enter {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .quicklist-container {
+          transition: none;
+          transform: none;
+          opacity: 1;
+        }
+      }
+
+      .chip-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-bottom: 8px;
+        max-height: 72px;
+        overflow-y: auto;
+
+        min-height: 18px;
+      }
+
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 2px 6px;
+        border-radius: 999px;
+        background: #232121;
+        border: 1px solid var(--muted);
+        color: #eaeaea;
+        font-size: 11px;
+        line-height: 1;
+        user-select: none;
+
+        opacity: 0;
+        transform: translateY(-4px) scale(0.98);
+        transition:
+          opacity 90ms ease-out,
+          transform 90ms ease-out;
+      }
+      .chip:hover {
+        background: var(--muted);
+      }
+      .chip.in {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+      }
+
+      /* .chip-btn { */
+      /*   background: transparent; */
+      /*   border: none; */
+      /*   color: #bfbfbf; */
+      /*   font-size: 12px; */
+      /*   cursor: pointer; */
+      /*   line-height: 1; */
+      /*   padding: 0 0 0 2px; */
+      /* } */
+      /* .chip-btn:focus { */
+      /*   outline: none; */
+      /* } */
+      /* .chip-btn:hover { */
+      /*   color: #ffffff; */
+      /* } */
+      /**/
+      .quicklist-container {
+        opacity: 0;
+        transform: translateY(-8px);
+        transition:
+          opacity 100ms ease-out,
+          transform 100ms ease-out;
+      }
+      .quicklist-container.enter {
+        opacity: 1;
+        transform: translateY(0);
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .quicklist-container,
+        .chip {
+          transition: none;
+          transform: none;
+          opacity: 1;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="quicklist-container">
+      <div class="context-header" id="contextHeader">General</div>
+
+      <div class="list-container" id="listContainer"></div>
+
+      <div class="search-container">
+        <div class="chip-bar" id="chipBar" aria-live="polite"></div>
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="Type to filter sources..."
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+      </div>
+
+      <div class="confirm-overlay" id="confirmOverlay" aria-hidden="true">
+        <div
+          class="confirm-modal"
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="confirmTitle"
+        >
+          <div class="confirm-header" id="confirmTitle">Confirm Close</div>
+          <div class="confirm-body">
+            The following links were deleted this session:
+            <ul class="confirm-list" id="confirmList"></ul>
+          </div>
+          <div class="confirm-footer">
+            <span class="btn-row-hint"
+              >Press <span class="kbd">Y</span> or
+              <span class="kbd">N</span></span
+            >
+            <button class="btn" id="btnNo">No</button>
+            <button class="btn btn-primary" id="btnYes">Yes</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = window.electron;
+
+      let allItems = [];
+      let filteredItems = [];
+      let activeIndex = -1;
+      let editingItemId = null;
+
+      const containerEl = document.querySelector(".quicklist-container");
+      const searchInput = document.getElementById("searchInput");
+      const listContainer = document.getElementById("listContainer");
+      const contextHeader = document.getElementById("contextHeader");
+
+      const confirmOverlay = document.getElementById("confirmOverlay");
+      const confirmList = document.getElementById("confirmList");
+      const btnYes = document.getElementById("btnYes");
+      const btnNo = document.getElementById("btnNo");
+
+      const chipBar = document.getElementById("chipBar");
+      let chipNodes = [];
+
+      function getSearchTermsRaw() {
+        return searchInput.value;
+      }
+      function getSearchTerms() {
+        return getSearchTermsRaw().split(" ").filter(Boolean);
+      }
+      function setSearchTerms(terms) {
+        searchInput.value = (terms || []).join(" ");
+      }
+
+      function runOpenAnimation() {
+        containerEl.classList.remove("enter");
+        void containerEl.offsetWidth;
+        requestAnimationFrame(() => containerEl.classList.add("enter"));
+      }
+
+      function createChip(term) {
+        const chip = document.createElement("span");
+        chip.className = "chip in";
+        chip.dataset.term = term;
+        chip.innerHTML = `
+          <span class="chip-text" aria-label="Remove ${term}" title="Remove ${term}">${term}</span>
+        <!-- <button class="chip-btn" aria-label="Remove ${term}" title="Remove ${term}">×</button> -->
+      `;
+
+        chip.querySelector(".chip-text").addEventListener("click", (e) => {
+          e.stopPropagation();
+          const idx = Array.prototype.indexOf.call(chipBar.children, chip);
+          if (idx >= 0) removeTermAtIndex(idx);
+        });
+
+        requestAnimationFrame(() => chip.classList.add("in"));
+        return chip;
+      }
+
+      function renderChipsDiff() {
+        const terms = getSearchTerms();
+
+        const common = Math.min(chipNodes.length, terms.length);
+        for (let i = 0; i < common; i++) {
+          if (chipNodes[i].dataset.term !== terms[i]) {
+            chipNodes[i].dataset.term = terms[i];
+            const chip = chipNodes[i].querySelector(".chip-text");
+            chip.textContent = terms[i];
+            chip.setAttribute("aria-label", `Remove ${terms[i]}`);
+            chip.setAttribute("title", `Remove ${terms[i]}`);
+            // chipNodes[i].querySelector(".chip-text").textContent = terms[i];
+            // chipNodes[]
+            // const btn = chipNodes[i].querySelector(".chip-btn");
+            // btn.setAttribute("aria-label", `Remove ${terms[i]}`);
+            // btn.setAttribute("title", `Remove ${terms[i]}`);
+          }
+        }
+
+        for (let i = chipNodes.length; i < terms.length; i++) {
+          const chip = createChip(terms[i]);
+          chipBar.appendChild(chip);
+          chipNodes.push(chip);
+        }
+
+        if (terms.length < chipNodes.length) {
+          const toRemove = chipNodes.splice(terms.length);
+          toRemove.forEach((chip) => {
+            chip.classList.remove("in");
+            chip.style.opacity = "0";
+            chip.style.transform = "translateY(-4px) scale(0.98)";
+            chip.addEventListener("transitionend", () => chip.remove(), {
+              once: true,
+            });
+          });
+        }
+      }
+
+      function removeTermAtIndex(index) {
+        const terms = getSearchTerms();
+        terms.splice(index, 1);
+        setSearchTerms(terms);
+        renderChipsDiff();
+        filterAndRender();
+        searchInput.focus();
+      }
+
+      ipcRenderer.on("quicklist-show", (data) => {
+        allItems = data.items || [];
+
+        if (data.context === "general") {
+          contextHeader.textContent = "General Links";
+        } else {
+          const filename = data.context.split("/").slice(-2)[0];
+          contextHeader.textContent = filename;
+        }
+
+        searchInput.value = "";
+        activeIndex = -1;
+        editingItemId = null;
+
+        runOpenAnimation();
+
+        filterAndRender();
+        chipNodes = [];
+        chipBar.innerHTML = "";
+        renderChipsDiff();
+        listContainer.scrollTop = listContainer.scrollHeight;
+        searchInput.focus();
+      });
+
+      ipcRenderer.on("quicklist-refresh", (data) => {
+        allItems = data.items || [];
+        filterAndRender();
+      });
+
+      ipcRenderer.on("quicklist-confirm-close", (titles) => {
+        confirmList.innerHTML = "";
+        (titles || []).forEach((t) => {
+          const li = document.createElement("li");
+          li.textContent = t;
+          confirmList.appendChild(li);
+        });
+        confirmOverlay.classList.add("visible");
+        confirmOverlay.setAttribute("aria-hidden", "false");
+        btnYes.focus();
+      });
+
+      function sendConfirm(result) {
+        confirmOverlay.classList.remove("visible");
+        confirmOverlay.setAttribute("aria-hidden", "true");
+        ipcRenderer.send("quicklist-confirm-close-result", { confirm: result });
+      }
+
+      btnYes.addEventListener("click", () => sendConfirm(true));
+      btnNo.addEventListener("click", () => sendConfirm(false));
+
+      document.addEventListener("keydown", (e) => {
+        if (!confirmOverlay.classList.contains("visible")) return;
+        if (e.key.toLowerCase() === "y") {
+          e.preventDefault();
+          sendConfirm(true);
+        } else if (e.key.toLowerCase() === "n" || e.key === "Escape") {
+          e.preventDefault();
+          sendConfirm(false);
+        }
+      });
+
+      function escapeRegExp(s) {
+        return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      }
+      function hl(text, term) {
+        if (!term) return text;
+        const words = term.split(" ").filter(Boolean).map(escapeRegExp);
+        if (words.length === 0) return text;
+        const re = new RegExp(words.join("|"), "ig");
+        return text.replace(re, (m) => `<span class="hl">${m}</span>`);
+      }
+
+      function filterAndRender() {
+        const terms = getSearchTerms().map((t) => t.toLowerCase());
+        filteredItems = allItems.filter((item) =>
+          terms.every(
+            (term) =>
+              item.title.toLowerCase().includes(term) ||
+              item.url.toLowerCase().includes(term),
+          ),
+        );
+        renderList();
+      }
+
+      function renderList() {
+        listContainer.innerHTML = "";
+
+        filteredItems.forEach((item, index) => {
+          const div = document.createElement("div");
+
+          div.className = "link-item";
+          if (index === activeIndex) div.classList.add("active");
+          if (item.id === editingItemId) div.classList.add("editing-title");
+
+          div.innerHTML = `
+          <div class="link-content">
+            <div class="link-title">${hl(item.title, searchInput.value)}</div>
+            <input type="text" class="title-input" value="${item.title}" />
+            <div class="link-url">${hl(item.url, searchInput.value)}</div>
+          </div>
+        `;
+
+          div.onclick = () => {
+            activeIndex = index;
+            if (activeIndex >= 0 && activeIndex < filteredItems.length) {
+              const item = filteredItems[activeIndex];
+              ipcRenderer.send("quicklist-navigate", item.url);
+            }
+          };
+
+          if (item.id === editingItemId) {
+            const input = div.querySelector(".title-input");
+            setTimeout(() => {
+              input.focus();
+              input.select();
+            }, 0);
+
+            input.addEventListener("keydown", (e) => {
+              if (e.key === "Enter") {
+                ipcRenderer.send("quicklist-rename", {
+                  id: item.id,
+                  newTitle: input.value,
+                });
+                editingItemId = null;
+              } else if (e.key === "Escape") {
+                editingItemId = null;
+                filterAndRender();
+              }
+              e.stopPropagation();
+            });
+          }
+
+          listContainer.appendChild(div);
+        });
+      }
+
+      function scrollToActive() {
+        const items = listContainer.querySelectorAll(".link-item");
+        if (items[activeIndex]) {
+          items[activeIndex].scrollIntoView({
+            block: "nearest",
+            behavior: "smooth",
+          });
+        }
+      }
+
+      searchInput.addEventListener("input", () => {
+        renderChipsDiff();
+        filterAndRender();
+      });
+
+      searchInput.addEventListener("keydown", (e) => {
+        if (
+          e.key === "ArrowDown" ||
+          e.key === "ArrowUp" ||
+          (e.altKey && (e.key === "j" || e.key === "k"))
+        ) {
+          e.preventDefault();
+        }
+
+        if (
+          e.key === "Backspace" &&
+          searchInput.selectionStart === 0 &&
+          searchInput.selectionEnd === 0
+        ) {
+          const terms = getSearchTerms();
+          if (terms.length > 0) {
+            e.preventDefault();
+            terms.pop();
+            setSearchTerms(terms);
+            renderChipsDiff();
+            filterAndRender();
+          }
+        }
+
+        if (e.key === "Escape") {
+          ipcRenderer.send("quicklist-toggle");
+        }
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (editingItemId) return;
+
+        const isSearchFocused = document.activeElement === searchInput;
+
+        if (e.key === "ArrowDown" || (e.altKey && e.key === "j")) {
+          e.preventDefault();
+          if (activeIndex === filteredItems.length - 1) {
+            activeIndex = 0;
+          } else {
+            activeIndex = Math.min(activeIndex + 1, filteredItems.length - 1);
+          }
+          if (isSearchFocused) searchInput.blur();
+          renderList();
+          scrollToActive();
+        } else if (e.key === "ArrowUp" || (e.altKey && e.key === "k")) {
+          e.preventDefault();
+          if (activeIndex === 0) {
+            activeIndex = filteredItems.length - 1;
+          } else {
+            activeIndex =
+              activeIndex === -1
+                ? filteredItems.length - 1
+                : Math.max(activeIndex - 1, 0);
+          }
+
+          if (isSearchFocused) searchInput.blur();
+          renderList();
+          scrollToActive();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (activeIndex >= 0 && activeIndex < filteredItems.length) {
+            const item = filteredItems[activeIndex];
+            ipcRenderer.send("quicklist-navigate", item.url);
+          }
+        } else if (!isSearchFocused) {
+          if (e.key === "d" && activeIndex >= 0) {
+            const item = filteredItems[activeIndex];
+            ipcRenderer.send("quicklist-delete", item.id);
+          } else if (e.key === "r" && activeIndex >= 0) {
+            const item = filteredItems[activeIndex];
+            editingItemId = item.id;
+            filterAndRender();
+          } else if (e.key === "Escape") {
+            activeIndex = -1;
+            if (!isSearchFocused) filterAndRender();
+            searchInput.focus();
+            searchInput.select();
+          }
+        }
+
+        if (e.key === "Escape" && e.shiftKey) {
+          ipcRenderer.send("quicklist-toggle");
+        }
+      });
+
+      ipcRenderer.send("quicklist-get-data");
+    </script>
+  </body>
+</html>

@@ -11,10 +11,11 @@ const path = require("path");
 const fs = require("fs");
 const chokidar = require("chokidar");
 
-let CommandPalette = require("./modules/command_palette/palette");
-let TabManager = require("./modules/tab_manager");
-let TabBar = require("./modules/tab_bar/tab_bar");
-let AIChat = require("./modules/ai_chat/ai_chat");
+const CommandPalette = require("./modules/command_palette/palette");
+const TabManager = require("./modules/tab_manager");
+const TabBar = require("./modules/tab_bar/tab_bar");
+const AIChat = require("./modules/ai_chat/ai_chat");
+const QuickList = require("./modules/quicklist/quicklist");
 
 app.commandLine.appendSwitch("disable-pinch");
 // -------------------- argv helpers --------------------
@@ -68,6 +69,7 @@ const viewerConfig = {
   fit: parseEnumFlag("fit", new Set(["width", "height", "auto"]), "auto"),
   bg: parseStringFlag("bg", "#181616"),
   margins,
+  widthPercent: Math.min(1, parseNumberFlag("widthPercent", 0.95)),
 };
 
 function isHighDPI() {
@@ -119,6 +121,7 @@ let commandPalette = null;
 let tabManager = null;
 let tabBar = null;
 let aiChat = null;
+let quickList = null;
 
 let pdfPath = null;
 let initialTarget = resolveInitialTarget(argv);
@@ -202,13 +205,14 @@ function createWindow() {
   });
 
   tabManager = new TabManager(mainWin, viewerConfig);
+  tabManager.on("all-tabs-closed", () => performClose());
 
   tabBar = new TabBar(mainWin, tabManager, highDPI, viewerConfig);
   tabBar.show();
 
-  commandPalette = new CommandPalette(mainWin, tabManager);
-
+  commandPalette = new CommandPalette(mainWin, tabManager, viewerConfig);
   aiChat = new AIChat(mainWin, viewerConfig);
+  quickList = new QuickList(mainWin, tabManager, viewerConfig);
 
   mainWin.tabManager = tabManager;
   mainWin.commandPalette = commandPalette;
@@ -230,8 +234,30 @@ function createWindow() {
 
 function registerKeyboardShortcuts() {
   globalShortcut.register("CommandOrControl+R", () => {
-    if (mainWin && !mainWin.isDestroyed() && commandPalette) {
+    if (
+      mainWin &&
+      !mainWin.isDestroyed() &&
+      commandPalette &&
+      !quickList.isVisible
+    ) {
       commandPalette.toggle();
+    }
+  });
+  globalShortcut.register("CommandOrControl+U", () => {
+    // actually l
+    if (mainWin && !mainWin.isDestroyed() && quickList) {
+      quickList.addCurrentLink();
+    }
+  });
+
+  globalShortcut.register("CommandOrControl+/", () => {
+    if (
+      mainWin &&
+      !mainWin.isDestroyed() &&
+      quickList &&
+      !commandPalette.isVisible
+    ) {
+      quickList.toggle();
     }
   });
 }
@@ -240,6 +266,11 @@ function unregisterKeyboardShortcuts() {
   globalShortcut.unregisterAll();
 }
 
+function performClose() {
+  if (watcher) watcher.close();
+  unregisterKeyboardShortcuts();
+  app.quit();
+}
 // -------------------- app lifecycle --------------------
 app.whenReady().then(() => {
   highDPI = isHighDPI();
@@ -262,6 +293,8 @@ app.whenReady().then(() => {
     };
     setInterval(checkParent, 500).unref();
   }
+
+  // attachMoveResizeListeners();
 });
 
 const keepAlive = {
@@ -269,10 +302,7 @@ const keepAlive = {
 };
 
 app.on("window-all-closed", () => {
-  if (watcher) watcher.close();
-  if (aiChat) aiChat.destroy();
-  unregisterKeyboardShortcuts();
-  if (process.platform !== "darwin") app.quit();
+  performClose();
 });
 
 app.on("activate", () => {
@@ -286,9 +316,7 @@ app.on("will-quit", () => {
 // -------------------- IPC --------------------
 
 ipcMain.on("close-window", () => {
-  if (watcher) watcher.close();
-  unregisterKeyboardShortcuts();
-  app.quit();
+  performClose();
 });
 
 ipcMain.on("load-new-pdf", (_event, newPath) => {

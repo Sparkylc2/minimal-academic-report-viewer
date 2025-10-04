@@ -28,6 +28,7 @@
         display: flex;
         align-items: center;
         height: 100vh;
+        width: 100%;
         background: var(--bg);
         padding: 0 0px;
         gap: 2px;
@@ -126,39 +127,39 @@
         margin-right: 4px;
       }
 
-      .ai-indicator {
-        position: absolute;
-        top: 0;
-        right: 6px;
-        height: 100%;
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        -webkit-app-region: no-drag;
-      }
-      .ai-chip {
-        display: inline-flex;
-        align-items: center;
-        gap: 6px;
-        padding: 6px 8px;
-        border-radius: 8px;
-        background: transparent;
-        cursor: pointer;
-        transition: background 0.15s ease;
-      }
-      .ai-chip:hover {
-        background: rgba(255, 255, 255, 0.06);
-      }
-      .ai-chip svg {
-        width: 14px;
-        height: 14px;
-        display: block;
-      }
-      .ai-chip .label {
-        font-size: 10px;
-        color: var(--muted);
-        letter-spacing: 0.2px;
-      }
+      /* .ai-indicator { */
+      /*   position: absolute; */
+      /*   top: 0; */
+      /*   right: 6px; */
+      /*   height: 100%; */
+      /*   display: flex; */
+      /*   align-items: center; */
+      /*   gap: 6px; */
+      /*   -webkit-app-region: no-drag; */
+      /* } */
+      /* .ai-chip { */
+      /*   display: inline-flex; */
+      /*   align-items: center; */
+      /*   gap: 6px; */
+      /*   padding: 6px 8px; */
+      /*   border-radius: 8px; */
+      /*   background: transparent; */
+      /*   cursor: pointer; */
+      /*   transition: background 0.15s ease; */
+      /* } */
+      /* .ai-chip:hover { */
+      /*   background: rgba(255, 255, 255, 0.06); */
+      /* } */
+      /* .ai-chip svg { */
+      /*   width: 14px; */
+      /*   height: 14px; */
+      /*   display: block; */
+      /* } */
+      /* .ai-chip .label { */
+      /*   font-size: 10px; */
+      /*   color: var(--muted); */
+      /*   letter-spacing: 0.2px; */
+      /* } */
     </style>
   </head>
   <body>
@@ -187,7 +188,7 @@
         const tabBar = document.getElementById("tabBar");
         const newTabBtn = document.getElementById("newTab");
 
-        const aiIndicator = document.querySelector(".ai-indicator");
+        // const aiIndicator = document.querySelector(".ai-indicator");
         tabBar.innerHTML = "";
         tabs.forEach((tab, index) => {
           const tabEl = document.createElement("div");
@@ -236,11 +237,13 @@
       // const aiLabel = document.getElementById("aiLabel");
       //
       // aiChip.addEventListener("click", () => {
-      //   // refresh provider each click (in case it changed), then open
       //   ipcRenderer.send("chat-get-config");
       //   ipcRenderer.send("chat-toggle");
       // });
-      //
+
+      // aiChip.addEventListener("click", () => {
+      //   ipcRenderer.send("symbolab-toggle");
+      // });
       // function setAI(provider, model) {
       //   const p = (provider || "").toLowerCase();
       //   aiLabel.textContent = p === "anthropic" ? "Claude" : "OpenAI";
@@ -269,9 +272,7 @@
       //   setAI(cfg?.provider || "openai", cfg?.model || "");
       // });
       //
-      // // initial fetch
       // refreshAI();
-      // // optional: occasional re-sync in case it changes from settings while hidden
       // setInterval(refreshAI, 10000);
     </script>
   </body>

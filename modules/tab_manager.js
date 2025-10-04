@@ -78,6 +78,12 @@ class TabManager extends EventEmitter {
     });
   }
 
+  _emitEmptyIfNeeded() {
+    if (this.tabOrder.length === 0) {
+      this.emit("all-tabs-closed");
+    }
+  }
+
   getFirstPdfTab() {
     for (const id of this.tabOrder) {
       const tab = this.tabs.get(id);
@@ -338,6 +344,7 @@ class TabManager extends EventEmitter {
 
     this.tabs.delete(id);
     this.emit("tabs-changed");
+    this._emitEmptyIfNeeded();
   }
 
   closeCurrentTab() {

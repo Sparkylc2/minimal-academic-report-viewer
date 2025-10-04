@@ -1,4 +1,3 @@
-// ai_chat.js
 const { app, BrowserWindow, ipcMain, safeStorage } = require("electron");
 const path = require("path");
 const fs = require("fs");
