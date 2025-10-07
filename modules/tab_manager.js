@@ -176,7 +176,7 @@ class TabManager extends EventEmitter {
 
   getOrCreateMarkdownTab(mdPath) {
     for (const [id, tab] of this.tabs) {
-      if (tab.type === "markdown" && tab.target === pdfPath) {
+      if (tab.type === "markdown" && tab.target === mdPath) {
         this.switchToTab(id);
         return tab;
       }

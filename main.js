@@ -22,6 +22,7 @@ const MarkdownViewer = require("./modules/markdown_viewer/viewer");
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
 
+console.log("args", argv);
 function parseNumberFlag(name, def) {
   const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
   if (withEq) {
@@ -82,6 +83,12 @@ function resolveFileArg(args) {
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
     const a = String(raw).trim();
+    if (path.isAbsolute(a) && fs.existsSync(a)) {
+      const ext = path.extname(a).toLowerCase();
+      if (ext === ".pdf" || ext === ".md" || ext === ".markdown") {
+        return a;
+      }
+    }
     if (/\.(pdf|md|markdown)$/i.test(a)) return path.resolve(a);
     try {
       const abs = path.resolve(a);
@@ -95,6 +102,7 @@ function resolveFileArg(args) {
   }
   return null;
 }
+
 // -------------------- single instance --------------------
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
