@@ -210,7 +210,7 @@
           tabEl.onclick = () => ipcRenderer.send("tab-switch", tab.id);
           tabBar.appendChild(tabEl);
 
-          if (index === 0 && tab.type === "pdf") {
+          if (index === 0 && (tab.type === "pdf" || tab.type === "markdown")) {
             const bar = document.createElement("div");
             bar.className = "rounded-bar";
             tabBar.appendChild(bar);

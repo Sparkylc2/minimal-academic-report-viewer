@@ -1,26 +1,37 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+const sendChannels = [
+  "close-window",
+  "load-new-pdf",
+  "viewer-config",
+  "main-window-resized",
+  "main-window-moved",
+];
+
+const onChannels = [
+  "viewer-config",
+  "load-pdf",
+  "reload-pdf",
+  "load-md",
+  "reload-md",
+];
+
+const invokeChannels = ["read-file"];
 contextBridge.exposeInMainWorld("electron", {
   ipcRenderer: {
     send: (channel, data) => {
-      const channels = [
-        "close-window",
-        "load-new-pdf",
-        "viewer-config",
-        "main-window-resized",
-        "main-window-moved",
-      ];
-      if (channels.includes(channel)) {
+      if (sendChannels.includes(channel)) {
         ipcRenderer.send(channel, data);
       }
     },
     on: (channel, fn) => {
-      if (
-        channel === "viewer-config" ||
-        channel === "load-pdf" ||
-        channel === "reload-pdf"
-      ) {
+      if (onChannels.includes(channel)) {
         ipcRenderer.on(channel, (_event, ...args) => fn(...args));
+      }
+    },
+    invoke: (channel, args) => {
+      if (invokeChannels.includes(channel)) {
+        return ipcRenderer.invoke(channel, args);
       }
     },
   },

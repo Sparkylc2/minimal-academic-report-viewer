@@ -33,7 +33,6 @@ class AIChat {
   create() {
     console.log("AIChat create window");
     if (this.chatWin && !this.chatWin.isDestroyed()) return;
-    console.log(this.margins);
     const p = this.parentWin.getBounds();
     const inner = this._innerRect(p);
 

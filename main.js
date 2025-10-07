@@ -9,6 +9,7 @@ const {
 
 const path = require("path");
 const fs = require("fs");
+const fsp = require("fs/promises");
 const chokidar = require("chokidar");
 
 const CommandPalette = require("./modules/command_palette/palette");
@@ -16,8 +17,8 @@ const TabManager = require("./modules/tab_manager");
 const TabBar = require("./modules/tab_bar/tab_bar");
 const AIChat = require("./modules/ai_chat/ai_chat");
 const QuickList = require("./modules/quicklist/quicklist");
+const MarkdownViewer = require("./modules/markdown_viewer/viewer");
 
-app.commandLine.appendSwitch("disable-pinch");
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
 
@@ -77,21 +78,23 @@ function isHighDPI() {
   return scaleFactor > 1;
 }
 // -------------------- resolve initial pdf --------------------
-function resolvePdfArg(args) {
+function resolveFileArg(args) {
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
     const a = String(raw).trim();
-    if (/\.pdf$/i.test(a)) return path.resolve(a);
+    if (/\.(pdf|md|markdown)$/i.test(a)) return path.resolve(a);
     try {
       const abs = path.resolve(a);
-      if (fs.existsSync(abs) && path.extname(abs).toLowerCase() === ".pdf") {
-        return abs;
+      if (fs.existsSync(abs)) {
+        const ext = path.extname(abs).toLowerCase();
+        if (ext === ".pdf" || ext === ".md" || ext === ".markdown") {
+          return abs;
+        }
       }
     } catch (_) {}
   }
   return null;
 }
-
 // -------------------- single instance --------------------
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -99,17 +102,25 @@ if (!gotLock) {
   process.exit(0);
 } else {
   app.on("second-instance", (_event, argv2) => {
-    const newPdf = resolvePdfArg(argv2.slice(1));
+    const newFile = resolveFileArg(argv2.slice(1));
     if (mainWin) {
       if (mainWin.isMinimized()) mainWin.restore();
       mainWin.show();
       mainWin.focus();
     }
-    if (newPdf && fs.existsSync(newPdf)) {
-      pdfPath = newPdf;
-      ensurePdfTabLoaded(newPdf);
-      watchFile(newPdf);
-      sendToPdfView("load-pdf", newPdf);
+    if (newFile && fs.existsSync(newFile)) {
+      const ext = path.extname(newFile).toLowerCase();
+      if (ext === ".pdf") {
+        filePath = newFile;
+        ensurePdfTabLoaded(newFile);
+        watchFile(newFile);
+        sendToPdfView("load-pdf", newFile);
+      } else if (ext === ".md" || ext === ".markdown") {
+        filePath = newFile;
+        ensureMarkdownTabLoaded(newFile);
+        watchFile(newFile);
+        sendToMarkdownView("load-md", newFile);
+      }
     }
   });
 }
@@ -122,8 +133,9 @@ let tabManager = null;
 let tabBar = null;
 let aiChat = null;
 let quickList = null;
+let markdownViewer = null;
 
-let pdfPath = null;
+let filePath = null;
 let initialTarget = resolveInitialTarget(argv);
 let highDPI = false;
 
@@ -143,7 +155,7 @@ function watchFile(filePath) {
     ignoreInitial: true,
   });
 
-  watcher.on("add", reloadPdf).on("change", reloadPdf);
+  watcher.on("add", reloadFile).on("change", reloadFile);
 }
 
 function getPdfView() {
@@ -157,14 +169,34 @@ function getPdfView() {
   return tab && tab.view ? tab.view : null;
 }
 
+function getMarkdownView() {
+  if (!tabManager) return null;
+  const firstMdId = tabManager.getFirstMarkdownTab
+    ? tabManager.getFirstMarkdownTab()
+    : null;
+  if (!firstMdId) return null;
+
+  const tab = tabManager.tabs && tabManager.tabs.get(firstMdId);
+  return tab && tab.view ? tab.view : null;
+}
+
 function sendToPdfView(channel, ...args) {
   const v = getPdfView();
   if (v && !v.webContents.isDestroyed()) v.webContents.send(channel, ...args);
 }
 
-function reloadPdf() {
-  if (pdfPath) {
-    sendToPdfView("reload-pdf", pdfPath);
+function sendToMarkdownView(channel, ...args) {
+  const v = getMarkdownView();
+  if (v && !v.webContents.isDestroyed()) v.webContents.send(channel, ...args);
+}
+
+function reloadFile() {
+  if (!filePath) return;
+
+  if (filePath.endsWith(".md") || filePath.endsWith(".markdown")) {
+    sendToMarkdownView("reload-md", filePath);
+  } else if (filePath.endsWith(".pdf")) {
+    sendToPdfView("reload-pdf", filePath);
   }
 }
 
@@ -176,7 +208,7 @@ function resolveInitialTarget(args) {
 
     if (a.startsWith("http://") || a.startsWith("https://")) return a;
 
-    if (/\.pdf$/i.test(a)) {
+    if (/\.(pdf|md|markdown)$/i.test(a)) {
       try {
         const abs = path.resolve(a);
         if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return abs;
@@ -189,6 +221,11 @@ function resolveInitialTarget(args) {
 function ensurePdfTabLoaded(targetPath) {
   if (!tabManager) return;
   tabManager.getOrCreatePdfTab(targetPath);
+}
+
+function ensureMarkdownTabLoaded(targetPath) {
+  if (!tabManager) return;
+  tabManager.getOrCreateMarkdownTab(targetPath);
 }
 
 // -------------------- window & view --------------------
@@ -213,16 +250,23 @@ function createWindow() {
   commandPalette = new CommandPalette(mainWin, tabManager, viewerConfig);
   aiChat = new AIChat(mainWin, viewerConfig);
   quickList = new QuickList(mainWin, tabManager, viewerConfig);
+  markdownViewer = new MarkdownViewer(mainWin, viewerConfig);
 
   mainWin.tabManager = tabManager;
   mainWin.commandPalette = commandPalette;
 
   registerKeyboardShortcuts();
-
   if (initialTarget) {
     if (initialTarget.endsWith(".pdf")) {
-      pdfPath = initialTarget;
+      filePath = initialTarget;
       ensurePdfTabLoaded(initialTarget);
+      watchFile(initialTarget);
+    } else if (
+      initialTarget.endsWith(".md") ||
+      initialTarget.endsWith(".markdown")
+    ) {
+      filePath = initialTarget;
+      ensureMarkdownTabLoaded(initialTarget);
       watchFile(initialTarget);
     } else {
       tabManager.createWebTab(initialTarget);
@@ -293,8 +337,6 @@ app.whenReady().then(() => {
     };
     setInterval(checkParent, 500).unref();
   }
-
-  // attachMoveResizeListeners();
 });
 
 const keepAlive = {
@@ -324,8 +366,24 @@ ipcMain.on("load-new-pdf", (_event, newPath) => {
   const abs = path.resolve(newPath.trim());
   if (!fs.existsSync(abs)) return;
 
-  pdfPath = abs;
+  filePath = abs;
   ensurePdfTabLoaded(abs);
   watchFile(abs);
   sendToPdfView("load-pdf", abs);
+});
+
+ipcMain.on("load-new-md", (_event, newPath) => {
+  if (typeof newPath !== "string" || !newPath.trim()) return;
+  const abs = path.resolve(newPath.trim());
+  if (!fs.existsSync(abs)) return;
+
+  filePath = abs;
+  ensureMarkdownTabLoaded(abs);
+  watchFile(abs);
+  sendToMarkdownView("load-md", abs);
+});
+
+ipcMain.handle("read-file", async (_evt, filePath) => {
+  const buf = await fsp.readFile(filePath);
+  return buf.toString("utf8");
 });

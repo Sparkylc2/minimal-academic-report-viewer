@@ -92,6 +92,14 @@ class TabManager extends EventEmitter {
     return null;
   }
 
+  getFirstMarkdownTab() {
+    for (const id of this.tabOrder) {
+      const tab = this.tabs.get(id);
+      if (tab && tab.type === "markdown") return id;
+    }
+    return null;
+  }
+
   getOrCreatePdfTab(pdfPath) {
     for (const [id, tab] of this.tabs) {
       if (tab.type === "pdf" && tab.target === pdfPath) {
@@ -110,7 +118,6 @@ class TabManager extends EventEmitter {
         offscreen: false,
       },
     });
-    // view.webContents.openDevTools({ mode: "detach" });
     try {
       view.webContents.setBackgroundColor("#00000000");
     } catch {}
@@ -167,12 +174,89 @@ class TabManager extends EventEmitter {
     return tab;
   }
 
-  getLastWebTab() {
-    for (let i = this.tabOrder.length - 1; i >= 0; i--) {
-      const tab = this.tabs.get(this.tabOrder[i]);
-      if (tab && tab.type === "web") return this.tabOrder[i];
+  getOrCreateMarkdownTab(mdPath) {
+    for (const [id, tab] of this.tabs) {
+      if (tab.type === "markdown" && tab.target === pdfPath) {
+        this.switchToTab(id);
+        return tab;
+      }
     }
-    return null;
+    const id = this.nextId++;
+    const view = new WebContentsView({
+      webPreferences: {
+        contextIsolation: true,
+        nodeIntegration: false,
+        preload: path.join(__dirname, "../preload.js"),
+        backgroundThrottling: false,
+        offscreen: false,
+      },
+    });
+
+    this.enablePinch(view.webContents);
+
+    try {
+      view.webContents.setBackgroundColor("#00000000");
+    } catch {}
+    const tab = {
+      id,
+      view,
+      type: "markdown",
+      title: path.basename(mdPath),
+      target: mdPath,
+      history: [mdPath],
+      historyIndex: 0,
+    };
+
+    this.tabs.set(id, tab);
+
+    const pdfIndex = this.tabOrder.findIndex((tabId) => {
+      const t = this.tabs.get(tabId);
+      return t && t.type === "pdf";
+    });
+
+    if (pdfIndex >= 0) {
+      this.tabOrder.splice(pdfIndex + 1, 0, id);
+    } else {
+      this.tabOrder.push(id);
+    }
+    const viewerPath = path.join(__dirname, "markdown_viewer", "viewer.html");
+    view.webContents.loadFile(viewerPath);
+    view.webContents.on("did-finish-load", () => {
+      view.webContents.send("viewer-config", this.config);
+      view.webContents.send("load-md", mdPath);
+    });
+
+    view.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return;
+
+      const cmdOrCtrl =
+        process.platform === "darwin" ? input.meta : input.control;
+      const key = (input.key || "").toLowerCase();
+
+      if (cmdOrCtrl && key === "t" && !input.shift) {
+        event.preventDefault();
+        this.mainWin.commandPalette?.show();
+      } else if (cmdOrCtrl && input.shift && key === "t") {
+        event.preventDefault();
+        this.reopenClosedTab();
+      } else if (cmdOrCtrl && key === "w") {
+        event.preventDefault();
+      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
+        event.preventDefault();
+        this.switchToTabByIndex(parseInt(key, 10));
+      } else if (cmdOrCtrl && key === "arrowleft") {
+        event.preventDefault();
+        this.navigateBack();
+      } else if (cmdOrCtrl && key === "arrowright") {
+        event.preventDefault();
+        this.navigateForward();
+      }
+    });
+
+    this.switchToTab(id);
+    this.emit("tabs-changed");
+
+    return tab;
   }
 
   createWebTab(url) {
@@ -189,7 +273,8 @@ class TabManager extends EventEmitter {
       },
     });
 
-    // view.webContents.openDevTools({ mode: "detach" });
+    this.enablePinch(view.webContents);
+
     const tab = {
       id,
       view,
@@ -267,7 +352,13 @@ class TabManager extends EventEmitter {
     this.emit("tabs-changed");
     return tab;
   }
-
+  getLastWebTab() {
+    for (let i = this.tabOrder.length - 1; i >= 0; i--) {
+      const tab = this.tabs.get(this.tabOrder[i]);
+      if (tab && tab.type === "web") return this.tabOrder[i];
+    }
+    return null;
+  }
   getOrCreateWebTab(url) {
     return this.createWebTab(url);
   }
@@ -306,7 +397,7 @@ class TabManager extends EventEmitter {
     const tab = this.tabs.get(id);
     if (!tab) return;
 
-    if (tab.type === "pdf") return;
+    if (tab.type === "pdf" || tab.type === "markdown") return;
 
     this.closedTabs.push({
       type: tab.type,
@@ -392,6 +483,15 @@ class TabManager extends EventEmitter {
         pdfs.push({ id, title: tab.title, path: tab.target });
     }
     return pdfs;
+  }
+
+  enablePinch(contents) {
+    try {
+      contents.setVisualZoomLevelLimits(1, 5);
+    } catch {}
+    try {
+      contents.setLayoutZoomLevelLimits(0, 3);
+    } catch {}
   }
 }
 

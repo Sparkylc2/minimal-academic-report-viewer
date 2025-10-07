@@ -59,8 +59,6 @@ class QuickList {
       skipTaskbar: true,
     });
 
-    // this.listWin.webContents.openDevTools({ mode: "detach" });
-
     this.listWin.loadFile(path.join(__dirname, "quicklist.html"));
 
     this.listWin.on("blur", () => {
@@ -157,7 +155,6 @@ class QuickList {
         this.deletedTitles = [];
         this.hide();
       } else {
-        // keep window open
       }
     });
 
@@ -174,7 +171,12 @@ class QuickList {
     const pdfTab = Array.from(this.tabManager.tabs.values()).find(
       (tab) => tab.type === "pdf",
     );
-    return pdfTab ? pdfTab.target : "general";
+    const markdownTab = Array.from(this.tabManager.tabs.values()).find(
+      (tab) => tab.type === "markdown",
+    );
+    if (pdfTab) return pdfTab.target;
+    if (markdownTab) return markdownTab.target;
+    return "general";
   }
 
   getContextData() {
@@ -294,7 +296,6 @@ class QuickList {
     this.listWin.focus();
 
     const data = this.getContextData();
-    // Include config so renderer can use it (no exposeInMainWorld needed)
     this.listWin.webContents.send("quicklist-show", {
       ...data,
       config: this.config || {},
