@@ -102,8 +102,17 @@ class TabManager extends EventEmitter {
 
   getOrCreatePdfTab(pdfPath) {
     for (const [id, tab] of this.tabs) {
-      if (tab.type === "pdf" && tab.target === pdfPath) {
+      if (tab.type === "pdf" || tab.type === "markdown") {
+        tab.type = "pdf";
+        tab.target = pdfPath;
+        tab.title = path.basename(pdfPath);
+        tab.history = [pdfPath];
+        tab.historyIndex = 0;
+
+        tab.view.webContents.send("load-pdf", pdfPath);
+
         this.switchToTab(id);
+        this.emit("tabs-changed");
         return tab;
       }
     }
@@ -133,7 +142,6 @@ class TabManager extends EventEmitter {
     };
 
     this.tabs.set(id, tab);
-
     this.tabOrder.unshift(id);
 
     const viewerPath = path.join(__dirname, "pdf_viewer", "viewer.html");
@@ -176,11 +184,21 @@ class TabManager extends EventEmitter {
 
   getOrCreateMarkdownTab(mdPath) {
     for (const [id, tab] of this.tabs) {
-      if (tab.type === "markdown" && tab.target === mdPath) {
+      if (tab.type === "pdf" || tab.type === "markdown") {
+        tab.type = "markdown";
+        tab.target = mdPath;
+        tab.title = path.basename(mdPath);
+        tab.history = [mdPath];
+        tab.historyIndex = 0;
+
+        tab.view.webContents.send("load-md", mdPath);
+
         this.switchToTab(id);
+        this.emit("tabs-changed");
         return tab;
       }
     }
+
     const id = this.nextId++;
     const view = new WebContentsView({
       webPreferences: {
@@ -258,7 +276,6 @@ class TabManager extends EventEmitter {
 
     return tab;
   }
-
   createWebTab(url) {
     const id = this.nextId++;
 
