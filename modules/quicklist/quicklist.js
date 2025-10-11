@@ -13,6 +13,7 @@ class QuickList {
     this.height = 500;
     this.config = viewerConfig;
     this.widthPercent = viewerConfig.widthPercent || 0.95;
+    this.parentWin.workspaceManager = null;
 
     this.store = new Store({
       name: "quicklist-data",
@@ -192,6 +193,14 @@ class QuickList {
     try {
       const data = this.store.get(key, defaultData);
       data.context = this.currentContext;
+
+      if (this.parentWin && this.parentWin.workspaceManager) {
+        const workspace = this.parentWin.workspaceManager.getActiveWorkspace();
+        if (workspace && workspace.displayName) {
+          data.displayContext = workspace.displayName;
+        }
+      }
+
       return data;
     } catch (err) {
       console.error("Error loading quicklist data:", err);

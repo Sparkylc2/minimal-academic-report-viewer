@@ -10,6 +10,10 @@ const appPath = path.join(__dirname, "main.js");
 const child = spawn(electronPath, [appPath, ...args], {
   stdio: "inherit",
   detached: false,
+  env: {
+    ...process.env,
+    ARVIEW_CWD: process.cwd(),
+  },
 });
 
 child.on("exit", (code) => {

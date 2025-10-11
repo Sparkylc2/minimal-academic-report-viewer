@@ -1,0 +1,423 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      :root {
+        --bg: #181616;
+        --muted: #3a3939;
+      }
+      body {
+        font-family:
+          -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue",
+          sans-serif;
+        background: transparent;
+        user-select: none;
+        overflow: hidden;
+      }
+
+      .workspace-container {
+        width: 100vw;
+        height: 100vh;
+        display: flex;
+        flex-direction: column;
+        background: #181616;
+        backdrop-filter: blur(20px);
+        -webkit-backdrop-filter: blur(20px);
+      }
+
+      .workspace-header {
+        padding: 12px 20px;
+        border-bottom: 1px solid var(--muted);
+        color: #fff;
+        font-size: 12px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+
+      .list-container {
+        flex: 1;
+        overflow-y: auto;
+        overflow-x: hidden;
+        padding: 8px;
+      }
+
+      .workspace-item {
+        display: flex;
+        align-items: center;
+        padding: 12px;
+        margin-bottom: 4px;
+        background: var(--bg);
+        cursor: pointer;
+        transition: all 0.15s ease;
+        position: relative;
+        border-radius: 6px;
+      }
+
+      .workspace-item.active {
+        background: var(--muted);
+      }
+
+      .workspace-item.editing-name .workspace-name {
+        display: none;
+      }
+
+      .workspace-item.editing-name .name-input {
+        display: block;
+      }
+
+      .workspace-indicator {
+        width: 32px;
+        height: 32px;
+        border-radius: 6px;
+        background: rgba(255, 255, 255, 0.05);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        margin-right: 12px;
+        font-size: 12px;
+        font-weight: 600;
+        color: rgba(255, 255, 255, 0.8);
+        flex-shrink: 0;
+      }
+
+      .workspace-indicator.pdf {
+        background: rgba(255, 107, 107, 0.15);
+        color: #ff6b6b;
+      }
+
+      .workspace-indicator.markdown {
+        background: rgba(138, 180, 255, 0.15);
+        color: #8ab4ff;
+      }
+
+      .workspace-content {
+        flex: 1;
+        overflow: hidden;
+      }
+
+      .workspace-name {
+        color: #fff;
+        font-size: 14px;
+        font-weight: 500;
+        margin-bottom: 2px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .workspace-path {
+        color: rgba(255, 255, 255, 0.5);
+        font-size: 11px;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+
+      .workspace-meta {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-left: 12px;
+        flex-shrink: 0;
+      }
+
+      .tab-count {
+        font-size: 11px;
+        color: rgba(255, 255, 255, 0.5);
+        background: rgba(255, 255, 255, 0.05);
+        padding: 2px 6px;
+        border-radius: 4px;
+      }
+
+      .name-input {
+        display: none;
+        width: 100%;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        color: #fff;
+        padding: 4px 8px;
+        border-radius: 4px;
+        font-size: 14px;
+        outline: none;
+      }
+
+      .search-container {
+        background: var(--bg);
+        padding: 15px 20px;
+        border-top: 1px solid var(--muted);
+      }
+
+      #searchInput {
+        border: none;
+        width: 100%;
+        background: var(--bg);
+        color: #fff;
+        padding: 10px 15px;
+        border-radius: 6px;
+        font-size: 14px;
+        outline: none;
+        box-shadow: none;
+        border: 1px solid var(--muted);
+      }
+
+      #searchInput:focus {
+        outline: none;
+        box-shadow: none;
+        border: 1px solid rgba(255, 255, 255, 0.5);
+      }
+
+      #searchInput::placeholder {
+        color: var(--muted);
+      }
+
+      .list-container::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .list-container::-webkit-scrollbar-track {
+        background: rgba(255, 255, 255, 0.05);
+        border-radius: 4px;
+      }
+
+      .list-container::-webkit-scrollbar-thumb {
+        background: rgba(255, 255, 255, 0.2);
+        border-radius: 4px;
+      }
+
+      .workspace-container {
+        opacity: 0;
+        transform: translateY(-12px);
+        transition:
+          opacity 160ms ease-out,
+          transform 160ms ease-out;
+      }
+      .workspace-container.enter {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="workspace-container">
+      <div class="workspace-header">Workspaces</div>
+
+      <div class="list-container" id="listContainer"></div>
+
+      <div class="search-container">
+        <input
+          type="text"
+          id="searchInput"
+          placeholder="Filter workspaces..."
+          autocomplete="off"
+          autocorrect="off"
+          autocapitalize="off"
+          spellcheck="false"
+        />
+      </div>
+    </div>
+
+    <script>
+      const { ipcRenderer } = window.electron;
+
+      let allWorkspaces = [];
+      let filteredWorkspaces = [];
+      let activeIndex = -1;
+      let editingWorkspaceId = null;
+
+      const containerEl = document.querySelector(".workspace-container");
+      const searchInput = document.getElementById("searchInput");
+      const listContainer = document.getElementById("listContainer");
+
+      function runOpenAnimation() {
+        containerEl.classList.remove("enter");
+        void containerEl.offsetWidth;
+        requestAnimationFrame(() => containerEl.classList.add("enter"));
+      }
+
+      ipcRenderer.on("workspace-switcher-show", (data) => {
+        allWorkspaces = data.workspaces || [];
+        searchInput.value = "";
+        activeIndex = -1;
+        editingWorkspaceId = null;
+
+        runOpenAnimation();
+        filterAndRender();
+        listContainer.scrollTop = 0;
+        searchInput.focus();
+      });
+
+      ipcRenderer.on("workspace-switcher-refresh", (data) => {
+        allWorkspaces = data.workspaces || [];
+        filterAndRender();
+      });
+
+      function filterAndRender() {
+        const term = searchInput.value.toLowerCase();
+        filteredWorkspaces = allWorkspaces.filter(
+          (ws) =>
+            ws.displayName.toLowerCase().includes(term) ||
+            ws.filePath.toLowerCase().includes(term),
+        );
+        renderList();
+      }
+
+      function renderList() {
+        listContainer.innerHTML = "";
+
+        filteredWorkspaces.forEach((ws, index) => {
+          const div = document.createElement("div");
+          div.className = "workspace-item";
+          if (index === activeIndex) div.classList.add("active");
+          if (ws.id === editingWorkspaceId) div.classList.add("editing-name");
+
+          const indicator = document.createElement("div");
+          indicator.className = `workspace-indicator ${ws.fileType}`;
+          indicator.textContent = ws.fileType === "pdf" ? "PDF" : "MD";
+
+          const content = document.createElement("div");
+          content.className = "workspace-content";
+
+          const name = document.createElement("div");
+          name.className = "workspace-name";
+          name.textContent = ws.displayName;
+
+          const nameInput = document.createElement("input");
+          nameInput.className = "name-input";
+          nameInput.value = ws.displayName;
+
+          const pathDiv = document.createElement("div");
+          pathDiv.className = "workspace-path";
+          pathDiv.textContent = ws.filePath;
+
+          content.appendChild(name);
+          content.appendChild(nameInput);
+          content.appendChild(pathDiv);
+
+          const meta = document.createElement("div");
+          meta.className = "workspace-meta";
+
+          const tabCount = document.createElement("div");
+          tabCount.className = "tab-count";
+          tabCount.textContent = `${ws.tabCount} tab${ws.tabCount !== 1 ? "s" : ""}`;
+          meta.appendChild(tabCount);
+
+          div.appendChild(indicator);
+          div.appendChild(content);
+          div.appendChild(meta);
+
+          div.onclick = () => {
+            activeIndex = index;
+            ipcRenderer.send("workspace-switcher-switch", ws.id);
+          };
+
+          if (ws.id === editingWorkspaceId) {
+            setTimeout(() => {
+              nameInput.focus();
+              nameInput.select();
+            }, 0);
+
+            nameInput.addEventListener("keydown", (e) => {
+              if (e.key === "Enter") {
+                ipcRenderer.send("workspace-switcher-rename", {
+                  id: ws.id,
+                  newName: nameInput.value,
+                });
+                editingWorkspaceId = null;
+              } else if (e.key === "Escape") {
+                editingWorkspaceId = null;
+                filterAndRender();
+              }
+              e.stopPropagation();
+            });
+          }
+
+          listContainer.appendChild(div);
+        });
+      }
+
+      function scrollToActive() {
+        const items = listContainer.querySelectorAll(".workspace-item");
+        if (items[activeIndex]) {
+          items[activeIndex].scrollIntoView({
+            block: "nearest",
+            behavior: "smooth",
+          });
+        }
+      }
+
+      searchInput.addEventListener("input", filterAndRender);
+
+      searchInput.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") {
+          ipcRenderer.send("workspace-switcher-close");
+        }
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (editingWorkspaceId) return;
+
+        const isSearchFocused = document.activeElement === searchInput;
+
+        if (e.key === "ArrowDown" || (e.altKey && e.key === "j")) {
+          e.preventDefault();
+          if (activeIndex === filteredWorkspaces.length - 1) {
+            activeIndex = 0;
+          } else {
+            activeIndex = Math.min(
+              activeIndex + 1,
+              filteredWorkspaces.length - 1,
+            );
+          }
+          if (isSearchFocused) searchInput.blur();
+          renderList();
+          scrollToActive();
+        } else if (e.key === "ArrowUp" || (e.altKey && e.key === "k")) {
+          e.preventDefault();
+          if (activeIndex === 0) {
+            activeIndex = filteredWorkspaces.length - 1;
+          } else {
+            activeIndex =
+              activeIndex === -1
+                ? filteredWorkspaces.length - 1
+                : Math.max(activeIndex - 1, 0);
+          }
+          if (isSearchFocused) searchInput.blur();
+          renderList();
+          scrollToActive();
+        } else if (e.key === "Enter") {
+          e.preventDefault();
+          if (activeIndex >= 0 && activeIndex < filteredWorkspaces.length) {
+            const ws = filteredWorkspaces[activeIndex];
+            ipcRenderer.send("workspace-switcher-switch", ws.id);
+          }
+        } else if (!isSearchFocused) {
+          if (e.key === "d" && activeIndex >= 0) {
+            const ws = filteredWorkspaces[activeIndex];
+            ipcRenderer.send("workspace-switcher-delete", ws.id);
+          } else if (e.key === "r" && activeIndex >= 0) {
+            const ws = filteredWorkspaces[activeIndex];
+            editingWorkspaceId = ws.id;
+            filterAndRender();
+          } else if (e.key === "Escape") {
+            activeIndex = -1;
+            if (!isSearchFocused) filterAndRender();
+            searchInput.focus();
+            searchInput.select();
+          }
+        }
+
+        if (e.key === "Escape" && e.shiftKey) {
+          ipcRenderer.send("workspace-switcher-close");
+        }
+      });
+
+      ipcRenderer.send("workspace-switcher-get-data");
+    </script>
+  </body>
+</html>

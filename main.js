@@ -12,6 +12,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const chokidar = require("chokidar");
 
+const { debugLog } = require("./modules/debug");
 const CommandPalette = require("./modules/command_palette/palette");
 const TabManager = require("./modules/tab_manager");
 const TabBar = require("./modules/tab_bar/tab_bar");
@@ -19,11 +20,13 @@ const AIChat = require("./modules/ai_chat/ai_chat");
 const QuickList = require("./modules/quicklist/quicklist");
 const MarkdownViewer = require("./modules/markdown_viewer/viewer");
 const SessionState = require("./modules/session_state");
+const WorkspaceManager = require("./modules/workspace_manager");
+const WorkspaceSwitcher = require("./modules/workspace_switcher/workspace_switcher");
 
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
 
-console.log("args", argv);
+debugLog("args", argv);
 function parseNumberFlag(name, def) {
   const withEq = argv.find((a) => a && a.startsWith(`--${name}=`));
   if (withEq) {
@@ -57,6 +60,12 @@ function parseStringFlag(name, def) {
   if (i !== -1) return argv[i + 1] || def;
   return def;
 }
+function extractWorkingDir() {
+  if (process.env.ARVIEW_CWD) {
+    return process.env.ARVIEW_CWD;
+  }
+  return process.cwd();
+}
 
 // -------------------- config --------------------
 const margins = {
@@ -80,19 +89,29 @@ function isHighDPI() {
   return scaleFactor > 1;
 }
 // -------------------- resolve initial pdf --------------------
-function resolveFileArg(args) {
+function resolveFileArg(args, workingDir = null) {
+  const cwd = workingDir || process.cwd();
+
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
     const a = String(raw).trim();
+
     if (path.isAbsolute(a) && fs.existsSync(a)) {
       const ext = path.extname(a).toLowerCase();
       if (ext === ".pdf" || ext === ".md" || ext === ".markdown") {
         return a;
       }
     }
-    if (/\.(pdf|md|markdown)$/i.test(a)) return path.resolve(a);
+
+    if (/\.(pdf|md|markdown)$/i.test(a)) {
+      const resolved = path.resolve(cwd, a);
+      if (fs.existsSync(resolved)) {
+        return resolved;
+      }
+    }
+
     try {
-      const abs = path.resolve(a);
+      const abs = path.resolve(cwd, a);
       if (fs.existsSync(abs)) {
         const ext = path.extname(abs).toLowerCase();
         if (ext === ".pdf" || ext === ".md" || ext === ".markdown") {
@@ -110,24 +129,41 @@ if (!gotLock) {
   app.quit();
   process.exit(0);
 } else {
-  app.on("second-instance", async (_event, argv2) => {
-    const newFile = resolveFileArg(argv2.slice(1));
+  app.on("second-instance", async (_event, argv2, workingDirectory) => {
+    debugLog("[main] second-instance event, args:", argv2);
+    debugLog("[main] Working directory from event:", workingDirectory);
+
+    const workingDir = workingDirectory || process.cwd();
+    debugLog("[main] Using working directory:", workingDir);
+
+    const newFile = resolveFileArg(argv2.slice(1), workingDir);
+    debugLog("[main] Resolved file:", newFile);
+
     if (mainWin) {
       if (mainWin.isMinimized()) mainWin.restore();
       mainWin.show();
       mainWin.focus();
     }
+
     if (newFile && fs.existsSync(newFile)) {
       const ext = path.extname(newFile).toLowerCase();
+      debugLog("[main] File extension:", ext);
+
       if (ext === ".pdf") {
         filePath = newFile;
+        debugLog("[main] Calling ensurePdfTabLoaded");
         await ensurePdfTabLoaded(newFile);
         watchFile(newFile);
+        debugLog("[main] ensurePdfTabLoaded completed");
       } else if (ext === ".md" || ext === ".markdown") {
         filePath = newFile;
+        debugLog("[main] Calling ensureMarkdownTabLoaded");
         await ensureMarkdownTabLoaded(newFile);
         watchFile(newFile);
+        debugLog("[main] ensureMarkdownTabLoaded completed");
       }
+    } else {
+      debugLog("[main] File does not exist or was not resolved");
     }
   });
 }
@@ -142,9 +178,12 @@ let aiChat = null;
 let quickList = null;
 let markdownViewer = null;
 let sessionState = null;
+let workspaceManager = null;
+let workspaceSwitcher = null;
 
 let filePath = null;
-let initialTarget = resolveInitialTarget(argv);
+const initialWorkingDir = extractWorkingDir();
+let initialTarget = resolveInitialTarget(argv, initialWorkingDir);
 let highDPI = false;
 
 // -------------------- file watching (global, single PDF) --------------------
@@ -209,7 +248,9 @@ function reloadFile() {
 }
 
 // -------------------- helpers --------------------
-function resolveInitialTarget(args) {
+function resolveInitialTarget(args, workingDir = null) {
+  const cwd = workingDir || process.cwd();
+
   for (const raw of args) {
     if (!raw || raw.startsWith("--")) continue;
     const a = String(raw).trim();
@@ -218,7 +259,7 @@ function resolveInitialTarget(args) {
 
     if (/\.(pdf|md|markdown)$/i.test(a)) {
       try {
-        const abs = path.resolve(a);
+        const abs = path.resolve(cwd, a);
         if (fs.existsSync(abs) && fs.statSync(abs).isFile()) return abs;
       } catch (_) {}
     }
@@ -227,61 +268,326 @@ function resolveInitialTarget(args) {
 }
 
 async function ensurePdfTabLoaded(targetPath) {
-  if (!tabManager || !sessionState) return;
+  if (!tabManager || !sessionState || !workspaceManager) {
+    debugLog("[main] ensurePdfTabLoaded: missing manager");
+    return;
+  }
 
-  const currentContext = sessionState.getContextKey(tabManager);
-  const newContext = targetPath;
+  debugLog("[main] ensurePdfTabLoaded:", targetPath);
 
-  if (currentContext !== newContext) {
-    await sessionState.saveState(tabManager, currentContext);
+  const existingWorkspaceId =
+    workspaceManager.findWorkspaceByFilePath(targetPath);
 
+  if (existingWorkspaceId) {
+    debugLog("[main] Found existing workspace:", existingWorkspaceId);
+    await switchToWorkspace(existingWorkspaceId);
+    return;
+  }
+
+  debugLog("[main] Creating new workspace for:", targetPath);
+
+  try {
+    const currentWorkspace = workspaceManager.getActiveWorkspace();
+    if (currentWorkspace) {
+      debugLog("[main] Saving current workspace state");
+      const currentContext = sessionState.getContextKey(tabManager);
+      await sessionState.saveState(tabManager, currentContext);
+
+      const savedState = sessionState.loadState(currentContext);
+      workspaceManager.updateWorkspace(
+        workspaceManager.activeWorkspaceId,
+        savedState,
+      );
+    }
+
+    debugLog("[main] Clearing tabs, count:", tabManager.tabs.size);
     const existingTabIds = [...tabManager.tabs.keys()];
     for (const id of existingTabIds) {
       const tab = tabManager.tabs.get(id);
-      if (tab && tab.type === "web") {
-        tabManager.closeTab(id);
+      if (tab && tab.view) {
+        try {
+          tabManager.insetView.removeChildView(tab.view);
+          if (!tab.view.webContents.isDestroyed()) {
+            tab.view.webContents.destroy();
+          }
+        } catch (err) {
+          console.error("[main] Error removing tab view:", err);
+        }
       }
     }
-  }
+    tabManager.tabs.clear();
+    tabManager.tabOrder = [];
+    tabManager.activeTab = null;
+    tabManager.emit("tabs-changed");
 
-  const savedState = sessionState.loadState(newContext);
+    debugLog("[main] Tabs cleared");
 
-  if (savedState && savedState.tabs) {
-    await restoreSessionState(savedState, targetPath, "pdf");
-  } else {
-    tabManager.getOrCreatePdfTab(targetPath);
+    const savedState = sessionState.loadState(targetPath);
+
+    const newWorkspaceId = workspaceManager.createWorkspace(
+      targetPath,
+      "pdf",
+      savedState,
+    );
+    debugLog("[main] Created new workspace:", newWorkspaceId);
+
+    if (savedState && savedState.tabs) {
+      debugLog(
+        "[main] Restoring saved state with",
+        savedState.tabs.length,
+        "tabs",
+      );
+      await restoreSessionState(savedState, targetPath, "pdf");
+    } else {
+      debugLog("[main] No saved state, creating fresh PDF tab");
+      tabManager.getOrCreatePdfTab(targetPath);
+    }
+
+    await updateCurrentWorkspaceState();
+
+    updateQuickListContext();
+  } catch (err) {
+    console.error("[main] Error in ensurePdfTabLoaded:", err);
   }
 }
 
 async function ensureMarkdownTabLoaded(targetPath) {
-  if (!tabManager || !sessionState) return;
+  if (!tabManager || !sessionState || !workspaceManager) {
+    debugLog("[main] ensureMarkdownTabLoaded: missing manager");
+    return;
+  }
 
-  const currentContext = sessionState.getContextKey(tabManager);
-  const newContext = targetPath;
+  debugLog("[main] ensureMarkdownTabLoaded:", targetPath);
 
-  if (currentContext !== newContext) {
-    await sessionState.saveState(tabManager, currentContext);
+  const existingWorkspaceId =
+    workspaceManager.findWorkspaceByFilePath(targetPath);
 
+  if (existingWorkspaceId) {
+    debugLog("[main] Found existing workspace:", existingWorkspaceId);
+    await switchToWorkspace(existingWorkspaceId);
+    return;
+  }
+
+  debugLog("[main] Creating new workspace for:", targetPath);
+
+  try {
+    const currentWorkspace = workspaceManager.getActiveWorkspace();
+    if (currentWorkspace) {
+      debugLog("[main] Saving current workspace state");
+      const currentContext = sessionState.getContextKey(tabManager);
+      await sessionState.saveState(tabManager, currentContext);
+
+      const savedState = sessionState.loadState(currentContext);
+      workspaceManager.updateWorkspace(
+        workspaceManager.activeWorkspaceId,
+        savedState,
+      );
+    }
+
+    debugLog("[main] Clearing tabs, count:", tabManager.tabs.size);
     const existingTabIds = [...tabManager.tabs.keys()];
     for (const id of existingTabIds) {
       const tab = tabManager.tabs.get(id);
-      if (tab && tab.type === "web") {
-        tabManager.closeTab(id);
+      if (tab && tab.view) {
+        try {
+          tabManager.insetView.removeChildView(tab.view);
+          if (!tab.view.webContents.isDestroyed()) {
+            tab.view.webContents.destroy();
+          }
+        } catch (err) {
+          console.error("[main] Error removing tab view:", err);
+        }
       }
+    }
+    tabManager.tabs.clear();
+    tabManager.tabOrder = [];
+    tabManager.activeTab = null;
+    tabManager.emit("tabs-changed");
+
+    debugLog("[main] Tabs cleared");
+
+    const savedState = sessionState.loadState(targetPath);
+
+    const newWorkspaceId = workspaceManager.createWorkspace(
+      targetPath,
+      "markdown",
+      savedState,
+    );
+    debugLog("[main] Created new workspace:", newWorkspaceId);
+
+    if (savedState && savedState.tabs) {
+      debugLog(
+        "[main] Restoring saved state with",
+        savedState.tabs.length,
+        "tabs",
+      );
+      await restoreSessionState(savedState, targetPath, "markdown");
+    } else {
+      debugLog("[main] No saved state, creating fresh Markdown tab");
+      tabManager.getOrCreateMarkdownTab(targetPath);
+    }
+
+    await updateCurrentWorkspaceState();
+
+    updateQuickListContext();
+  } catch (err) {
+    console.error("[main] Error in ensureMarkdownTabLoaded:", err);
+  }
+}
+async function updateCurrentWorkspaceState() {
+  if (!workspaceManager || !sessionState || !tabManager) return;
+
+  const currentWorkspace = workspaceManager.getActiveWorkspace();
+  if (!currentWorkspace) return;
+
+  await new Promise((resolve) => setTimeout(resolve, 100));
+
+  const currentContext = sessionState.getContextKey(tabManager);
+  await sessionState.saveState(tabManager, currentContext);
+
+  const savedState = sessionState.loadState(currentContext);
+  workspaceManager.updateWorkspace(
+    workspaceManager.activeWorkspaceId,
+    savedState,
+  );
+
+  debugLog(
+    "[main] Updated workspace state, tab count:",
+    savedState?.tabs?.length || 0,
+  );
+}
+async function switchToWorkspace(workspaceId) {
+  if (!workspaceManager || !tabManager || !sessionState) return;
+
+  debugLog("[main] Switching to workspace:", workspaceId);
+
+  try {
+    const currentWorkspace = workspaceManager.getActiveWorkspace();
+    if (currentWorkspace) {
+      const currentContext = sessionState.getContextKey(tabManager);
+      await sessionState.saveState(tabManager, currentContext);
+
+      const savedState = sessionState.loadState(currentContext);
+      workspaceManager.updateWorkspace(
+        workspaceManager.activeWorkspaceId,
+        savedState,
+      );
+    }
+
+    debugLog(
+      "[main] Clearing tabs for workspace switch, count:",
+      tabManager.tabs.size,
+    );
+    const existingTabIds = [...tabManager.tabs.keys()];
+    for (const id of existingTabIds) {
+      const tab = tabManager.tabs.get(id);
+      if (tab && tab.view) {
+        try {
+          tabManager.insetView.removeChildView(tab.view);
+          if (!tab.view.webContents.isDestroyed()) {
+            tab.view.webContents.destroy();
+          }
+        } catch (err) {
+          console.error("[main] Error removing tab view:", err);
+        }
+      }
+    }
+    tabManager.tabs.clear();
+    tabManager.tabOrder = [];
+    tabManager.activeTab = null;
+    tabManager.emit("tabs-changed");
+
+    workspaceManager.switchToWorkspace(workspaceId);
+
+    const workspace = workspaceManager.getWorkspace(workspaceId);
+    if (!workspace) {
+      debugLog("[main] Workspace not found:", workspaceId);
+      return;
+    }
+
+    debugLog("[main] Loading workspace:", workspace.filePath);
+
+    filePath = workspace.filePath;
+    watchFile(workspace.filePath);
+
+    const savedState = sessionState.loadState(workspace.filePath);
+
+    if (savedState && savedState.tabs) {
+      debugLog(
+        "[main] Restoring saved state with",
+        savedState.tabs.length,
+        "tabs",
+      );
+      await restoreSessionState(
+        savedState,
+        workspace.filePath,
+        workspace.fileType,
+      );
+    } else {
+      debugLog("[main] No saved state, creating fresh tab");
+      if (workspace.fileType === "pdf") {
+        tabManager.getOrCreatePdfTab(workspace.filePath);
+      } else {
+        tabManager.getOrCreateMarkdownTab(workspace.filePath);
+      }
+    }
+
+    await updateCurrentWorkspaceState();
+
+    updateQuickListContext();
+  } catch (err) {
+    console.error("[main] Error in switchToWorkspace:", err);
+  }
+}
+
+async function deleteWorkspace(workspaceId) {
+  if (!workspaceManager) return;
+
+  const success = workspaceManager.deleteWorkspace(workspaceId);
+
+  if (success) {
+    const newActiveWorkspace = workspaceManager.getActiveWorkspace();
+    if (newActiveWorkspace) {
+      await switchToWorkspace(newActiveWorkspace.id);
     }
   }
 
-  const savedState = sessionState.loadState(newContext);
+  if (workspaceSwitcher && workspaceSwitcher.isVisible) {
+    const workspaces = workspaceManager.getAllWorkspaces();
+    workspaceSwitcher.switcherWin.webContents.send(
+      "workspace-switcher-refresh",
+      {
+        workspaces,
+      },
+    );
+  }
+}
 
-  if (savedState && savedState.tabs) {
-    await restoreSessionState(savedState, targetPath, "markdown");
-  } else {
-    tabManager.getOrCreateMarkdownTab(targetPath);
+function updateQuickListContext() {
+  if (
+    quickList &&
+    quickList.listWin &&
+    !quickList.listWin.isDestroyed() &&
+    quickList.isVisible
+  ) {
+    const data = quickList.getContextData();
+    quickList.listWin.webContents.send("quicklist-show", {
+      ...data,
+      config: quickList.config || {},
+    });
   }
 }
 
 async function restoreSessionState(state, mainFilePath, mainFileType) {
   if (!state || !state.tabs || !tabManager) return;
+
+  const existingTabIds = [...tabManager.tabs.keys()];
+  for (const id of existingTabIds) {
+    const tab = tabManager.tabs.get(id);
+    if (tab && (tab.type === "pdf" || tab.type === "markdown")) {
+      tabManager.closeTab(id);
+    }
+  }
 
   for (let i = 0; i < state.tabs.length; i++) {
     const tabData = state.tabs[i];
@@ -351,9 +657,29 @@ async function createWindow() {
   quickList = new QuickList(mainWin, tabManager, viewerConfig);
   markdownViewer = new MarkdownViewer(mainWin, viewerConfig);
   sessionState = new SessionState();
+  workspaceManager = new WorkspaceManager();
+  workspaceSwitcher = new WorkspaceSwitcher(
+    mainWin,
+    workspaceManager,
+    viewerConfig,
+  );
+
+  quickList.parentWin.workspaceManager = workspaceManager;
 
   mainWin.tabManager = tabManager;
   mainWin.commandPalette = commandPalette;
+
+  workspaceSwitcher.on("switch-workspace", async (workspaceId) => {
+    await switchToWorkspace(workspaceId);
+  });
+
+  workspaceSwitcher.on("delete-workspace", async (workspaceId) => {
+    await deleteWorkspace(workspaceId);
+  });
+
+  workspaceSwitcher.on("workspace-renamed", () => {
+    updateQuickListContext();
+  });
 
   registerKeyboardShortcuts();
 
@@ -370,15 +696,18 @@ async function createWindow() {
       await ensureMarkdownTabLoaded(initialTarget);
       watchFile(initialTarget);
     } else {
-      tabManager.createWebTab(initialTarget);
+      const workspaces = workspaceManager.getAllWorkspaces();
+      if (workspaces.length === 0) {
+        tabManager.createWebTab(initialTarget);
+      }
     }
   } else {
-    sessionState.saveState(tabManager, null);
-    const savedState = sessionState.loadState("general");
-    if (savedState && savedState.tabs && savedState.tabs.length > 0) {
-      await restoreSessionState(savedState, null, null);
+    const workspaces = workspaceManager.getAllWorkspaces();
+    if (workspaces.length > 0) {
+      workspaces.sort((a, b) => b.lastAccessed - a.lastAccessed);
+      await switchToWorkspace(workspaces[0].id);
     } else {
-      tabManager.createWebTab("https://google.com");
+      debugLog("[main] No workspaces found and no initial target");
     }
   }
 }
@@ -389,11 +718,13 @@ function registerKeyboardShortcuts() {
       mainWin &&
       !mainWin.isDestroyed() &&
       commandPalette &&
-      !quickList.isVisible
+      !quickList.isVisible &&
+      (!workspaceSwitcher || !workspaceSwitcher.isVisible)
     ) {
       commandPalette.toggle();
     }
   });
+
   globalShortcut.register("CommandOrControl+U", () => {
     if (mainWin && !mainWin.isDestroyed() && quickList) {
       quickList.addCurrentLink();
@@ -405,11 +736,36 @@ function registerKeyboardShortcuts() {
       mainWin &&
       !mainWin.isDestroyed() &&
       quickList &&
-      !commandPalette.isVisible
+      !commandPalette.isVisible &&
+      (!workspaceSwitcher || !workspaceSwitcher.isVisible)
     ) {
       quickList.toggle();
     }
   });
+
+  globalShortcut.register("CommandOrControl+Shift+/", () => {
+    if (
+      mainWin &&
+      !mainWin.isDestroyed() &&
+      workspaceSwitcher &&
+      !commandPalette.isVisible &&
+      !quickList.isVisible
+    ) {
+      workspaceSwitcher.toggle();
+    }
+  });
+
+  // for (let i = 1; i <= 9; i++) {
+  //   globalShortcut.register(`CommandOrControl+Shift+${i}`, () => {
+  //     if (workspaceManager) {
+  //       const workspaces = workspaceManager.getAllWorkspaces();
+  //       workspaces.sort((a, b) => b.lastAccessed - a.lastAccessed);
+  //       if (workspaces[i - 1]) {
+  //         switchToWorkspace(workspaces[i - 1].id);
+  //       }
+  //     }
+  //   });
+  // }
 }
 
 function unregisterKeyboardShortcuts() {
@@ -417,23 +773,32 @@ function unregisterKeyboardShortcuts() {
 }
 
 async function performClose() {
-  console.log("[main] performClose called");
+  debugLog("[main] performClose called");
 
-  if (sessionState && tabManager) {
-    const currentContext = sessionState.getContextKey(tabManager);
-    console.log("[main] Saving state for context:", currentContext);
-    try {
-      await sessionState.saveState(tabManager, currentContext);
-      console.log("[main] State saved successfully");
-    } catch (err) {
-      console.error("[main] Error saving state:", err);
+  if (sessionState && tabManager && workspaceManager) {
+    const currentWorkspace = workspaceManager.getActiveWorkspace();
+    if (currentWorkspace) {
+      const currentContext = sessionState.getContextKey(tabManager);
+      debugLog("[main] Saving state for context:", currentContext);
+      try {
+        await sessionState.saveState(tabManager, currentContext);
+        debugLog("[main] State saved successfully");
+
+        const savedState = sessionState.loadState(currentContext);
+        workspaceManager.updateWorkspace(
+          workspaceManager.activeWorkspaceId,
+          savedState,
+        );
+      } catch (err) {
+        console.error("[main] Error saving state:", err);
+      }
     }
   }
 
   if (watcher) watcher.close();
   unregisterKeyboardShortcuts();
 
-  console.log("[main] Quitting app");
+  debugLog("[main] Quitting app");
   app.quit();
 }
 
@@ -466,7 +831,7 @@ const keepAlive = {
 };
 
 app.on("window-all-closed", async () => {
-  console.log("[main] window-all-closed event");
+  debugLog("[main] window-all-closed event");
   await performClose();
 });
 
@@ -475,17 +840,26 @@ app.on("activate", () => {
 });
 
 app.on("will-quit", async (e) => {
-  console.log("[main] will-quit event");
+  debugLog("[main] will-quit event");
   e.preventDefault();
 
-  if (sessionState && tabManager) {
-    const currentContext = sessionState.getContextKey(tabManager);
-    console.log("[main] will-quit: Saving state for context:", currentContext);
-    try {
-      await sessionState.saveState(tabManager, currentContext);
-      console.log("[main] will-quit: State saved successfully");
-    } catch (err) {
-      console.error("[main] will-quit: Error saving state:", err);
+  if (sessionState && tabManager && workspaceManager) {
+    const currentWorkspace = workspaceManager.getActiveWorkspace();
+    if (currentWorkspace) {
+      const currentContext = sessionState.getContextKey(tabManager);
+      debugLog("[main] will-quit: Saving state for context:", currentContext);
+      try {
+        await sessionState.saveState(tabManager, currentContext);
+        debugLog("[main] will-quit: State saved successfully");
+
+        const savedState = sessionState.loadState(currentContext);
+        workspaceManager.updateWorkspace(
+          workspaceManager.activeWorkspaceId,
+          savedState,
+        );
+      } catch (err) {
+        console.error("[main] will-quit: Error saving state:", err);
+      }
     }
   }
 
@@ -494,25 +868,33 @@ app.on("will-quit", async (e) => {
 });
 
 app.on("before-quit", async (e) => {
-  console.log("[main] before-quit event");
+  debugLog("[main] before-quit event");
   e.preventDefault();
 
-  if (sessionState && tabManager) {
-    const currentContext = sessionState.getContextKey(tabManager);
-    console.log(
-      "[main] before-quit: Saving state for context:",
-      currentContext,
-    );
-    try {
-      await sessionState.saveState(tabManager, currentContext);
-      console.log("[main] before-quit: State saved successfully");
-    } catch (err) {
-      console.error("[main] before-quit: Error saving state:", err);
+  if (sessionState && tabManager && workspaceManager) {
+    const currentWorkspace = workspaceManager.getActiveWorkspace();
+    if (currentWorkspace) {
+      const currentContext = sessionState.getContextKey(tabManager);
+      debugLog("[main] before-quit: Saving state for context:", currentContext);
+      try {
+        await sessionState.saveState(tabManager, currentContext);
+        debugLog("[main] before-quit: State saved successfully");
+
+        const savedState = sessionState.loadState(currentContext);
+        workspaceManager.updateWorkspace(
+          workspaceManager.activeWorkspaceId,
+          savedState,
+        );
+      } catch (err) {
+        console.error("[main] before-quit: Error saving state:", err);
+      }
     }
   }
 
   app.exit(0);
-}); // -------------------- IPC --------------------
+});
+
+// -------------------- IPC --------------------
 
 ipcMain.on("close-window", () => {
   performClose();
