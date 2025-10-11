@@ -36,6 +36,7 @@ The viewer has grown to include workspace management, a quick reference system f
   - `Cmd+t` opens the command palette to create a new web tab
   - `Cmd+Shift+t` reopens the last closed tab
   - `Cmd+w` closes the current web tab (won't close PDF/Markdown tabs)
+  - `Cmd+r` reloads the current web tab, or reloads the current view if its a PDF/Markdown tab
   - `Cmd+1-9` switches directly to that tab number
 - **History navigation**: `Cmd+Left` to go back, `Cmd+Right` to go forward in web tab history
 
@@ -111,11 +112,11 @@ To change keybindings, you'll need to edit the source files directly (this is te
 
 **PDF/Markdown navigation** (`modules/pdf_viewer/viewer-client.js` and `modules/markdown_viewer/viewer-client.js`):
 - Search for `document.addEventListener("keydown"` to find the main keyboard handler
-- Pan speed: Look for `const PAN_BASE_SPEED` around line 420
+- Pan speed: Look for `const PAN_BASE_SPEED` and change it 
 - Direction keys: Find `if (activePanKeys.has("h"))` to change hjkl bindings
 
 **Tab shortcuts** (`modules/tab_manager.js`):
-- Search for `view.webContents.on("before-input-event"` around line 150
+- Search for `_setupTabKeyBindings(tab)` 
 - Find sections checking for `cmdOrCtrl && key === "t"` and similar to change tab bindings
 
 **Global shortcuts** (`main.js`):
