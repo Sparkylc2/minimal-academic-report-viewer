@@ -158,6 +158,11 @@ ipcRenderer.on("reload-pdf", (pdfPath) => {
   });
 });
 
+ipcRenderer.on("get-state", (event, requestId) => {
+  const state = getViewState();
+  ipcRenderer.send("state-response", requestId, state);
+});
+
 eventBus.on("pagesinit", () => {
   applyInitialFit();
   updatePageGapForScale(pdfViewer.currentScale || 1);
@@ -597,5 +602,13 @@ document.addEventListener("keydown", (e) => {
   ) {
     e.preventDefault();
     ipcRenderer.send("close-window");
+  }
+});
+
+window.getViewState = getViewState;
+
+ipcRenderer.on("restore-view-state", (state) => {
+  if (state) {
+    restoreViewState(state);
   }
 });

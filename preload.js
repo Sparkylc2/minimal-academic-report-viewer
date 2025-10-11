@@ -14,9 +14,11 @@ const onChannels = [
   "reload-pdf",
   "load-md",
   "reload-md",
+  "restore-view-state",
 ];
 
 const invokeChannels = ["read-file"];
+
 contextBridge.exposeInMainWorld("electron", {
   ipcRenderer: {
     send: (channel, data) => {

@@ -18,6 +18,7 @@ const TabBar = require("./modules/tab_bar/tab_bar");
 const AIChat = require("./modules/ai_chat/ai_chat");
 const QuickList = require("./modules/quicklist/quicklist");
 const MarkdownViewer = require("./modules/markdown_viewer/viewer");
+const SessionState = require("./modules/session_state");
 
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
@@ -109,7 +110,7 @@ if (!gotLock) {
   app.quit();
   process.exit(0);
 } else {
-  app.on("second-instance", (_event, argv2) => {
+  app.on("second-instance", async (_event, argv2) => {
     const newFile = resolveFileArg(argv2.slice(1));
     if (mainWin) {
       if (mainWin.isMinimized()) mainWin.restore();
@@ -120,14 +121,12 @@ if (!gotLock) {
       const ext = path.extname(newFile).toLowerCase();
       if (ext === ".pdf") {
         filePath = newFile;
-        ensurePdfTabLoaded(newFile);
+        await ensurePdfTabLoaded(newFile);
         watchFile(newFile);
-        sendToPdfView("load-pdf", newFile);
       } else if (ext === ".md" || ext === ".markdown") {
         filePath = newFile;
-        ensureMarkdownTabLoaded(newFile);
+        await ensureMarkdownTabLoaded(newFile);
         watchFile(newFile);
-        sendToMarkdownView("load-md", newFile);
       }
     }
   });
@@ -142,6 +141,7 @@ let tabBar = null;
 let aiChat = null;
 let quickList = null;
 let markdownViewer = null;
+let sessionState = null;
 
 let filePath = null;
 let initialTarget = resolveInitialTarget(argv);
@@ -226,18 +226,109 @@ function resolveInitialTarget(args) {
   return null;
 }
 
-function ensurePdfTabLoaded(targetPath) {
-  if (!tabManager) return;
-  tabManager.getOrCreatePdfTab(targetPath);
+async function ensurePdfTabLoaded(targetPath) {
+  if (!tabManager || !sessionState) return;
+
+  const currentContext = sessionState.getContextKey(tabManager);
+  const newContext = targetPath;
+
+  if (currentContext !== newContext) {
+    await sessionState.saveState(tabManager, currentContext);
+
+    const existingTabIds = [...tabManager.tabs.keys()];
+    for (const id of existingTabIds) {
+      const tab = tabManager.tabs.get(id);
+      if (tab && tab.type === "web") {
+        tabManager.closeTab(id);
+      }
+    }
+  }
+
+  const savedState = sessionState.loadState(newContext);
+
+  if (savedState && savedState.tabs) {
+    await restoreSessionState(savedState, targetPath, "pdf");
+  } else {
+    tabManager.getOrCreatePdfTab(targetPath);
+  }
 }
 
-function ensureMarkdownTabLoaded(targetPath) {
-  if (!tabManager) return;
-  tabManager.getOrCreateMarkdownTab(targetPath);
+async function ensureMarkdownTabLoaded(targetPath) {
+  if (!tabManager || !sessionState) return;
+
+  const currentContext = sessionState.getContextKey(tabManager);
+  const newContext = targetPath;
+
+  if (currentContext !== newContext) {
+    await sessionState.saveState(tabManager, currentContext);
+
+    const existingTabIds = [...tabManager.tabs.keys()];
+    for (const id of existingTabIds) {
+      const tab = tabManager.tabs.get(id);
+      if (tab && tab.type === "web") {
+        tabManager.closeTab(id);
+      }
+    }
+  }
+
+  const savedState = sessionState.loadState(newContext);
+
+  if (savedState && savedState.tabs) {
+    await restoreSessionState(savedState, targetPath, "markdown");
+  } else {
+    tabManager.getOrCreateMarkdownTab(targetPath);
+  }
+}
+
+async function restoreSessionState(state, mainFilePath, mainFileType) {
+  if (!state || !state.tabs || !tabManager) return;
+
+  for (let i = 0; i < state.tabs.length; i++) {
+    const tabData = state.tabs[i];
+
+    if (tabData.type === "pdf" && mainFileType === "pdf") {
+      const tab = tabManager.getOrCreatePdfTab(mainFilePath);
+      if (tab && tabData.viewState) {
+        setTimeout(() => {
+          if (!tab.view.webContents.isDestroyed()) {
+            tab.view.webContents.send("restore-view-state", tabData.viewState);
+          }
+        }, 800);
+      }
+    } else if (tabData.type === "markdown" && mainFileType === "markdown") {
+      const tab = tabManager.getOrCreateMarkdownTab(mainFilePath);
+      if (tab && tabData.viewState) {
+        setTimeout(() => {
+          if (!tab.view.webContents.isDestroyed()) {
+            tab.view.webContents.send("restore-view-state", tabData.viewState);
+          }
+        }, 800);
+      }
+    } else if (tabData.type === "web") {
+      const webTab = tabManager.createWebTab(tabData.target);
+      if (webTab) {
+        webTab.title = tabData.title || tabData.target;
+        webTab.history = tabData.history || [tabData.target];
+        webTab.historyIndex = tabData.historyIndex || 0;
+      }
+    }
+  }
+
+  if (
+    state.activeTabIndex >= 0 &&
+    state.activeTabIndex < tabManager.tabOrder.length
+  ) {
+    const activeTabId = tabManager.tabOrder[state.activeTabIndex];
+    if (activeTabId) {
+      setTimeout(() => {
+        tabManager.switchToTab(activeTabId);
+      }, 100);
+    }
+  }
 }
 
 // -------------------- window & view --------------------
-function createWindow() {
+async function createWindow() {
   mainWin = new BaseWindow({
     width: 900,
     height: 1200,
@@ -259,28 +350,36 @@ function createWindow() {
   aiChat = new AIChat(mainWin, viewerConfig);
   quickList = new QuickList(mainWin, tabManager, viewerConfig);
   markdownViewer = new MarkdownViewer(mainWin, viewerConfig);
+  sessionState = new SessionState();
 
   mainWin.tabManager = tabManager;
   mainWin.commandPalette = commandPalette;
 
   registerKeyboardShortcuts();
+
   if (initialTarget) {
     if (initialTarget.endsWith(".pdf")) {
       filePath = initialTarget;
-      ensurePdfTabLoaded(initialTarget);
+      await ensurePdfTabLoaded(initialTarget);
       watchFile(initialTarget);
     } else if (
       initialTarget.endsWith(".md") ||
       initialTarget.endsWith(".markdown")
     ) {
       filePath = initialTarget;
-      ensureMarkdownTabLoaded(initialTarget);
+      await ensureMarkdownTabLoaded(initialTarget);
       watchFile(initialTarget);
     } else {
       tabManager.createWebTab(initialTarget);
     }
   } else {
-    tabManager.createWebTab("https://google.com");
+    sessionState.saveState(tabManager, null);
+    const savedState = sessionState.loadState("general");
+    if (savedState && savedState.tabs && savedState.tabs.length > 0) {
+      await restoreSessionState(savedState, null, null);
+    } else {
+      tabManager.createWebTab("https://google.com");
+    }
   }
 }
 
@@ -296,7 +395,6 @@ function registerKeyboardShortcuts() {
     }
   });
   globalShortcut.register("CommandOrControl+U", () => {
-    // actually l
     if (mainWin && !mainWin.isDestroyed() && quickList) {
       quickList.addCurrentLink();
     }
@@ -318,11 +416,27 @@ function unregisterKeyboardShortcuts() {
   globalShortcut.unregisterAll();
 }
 
-function performClose() {
+async function performClose() {
+  console.log("[main] performClose called");
+
+  if (sessionState && tabManager) {
+    const currentContext = sessionState.getContextKey(tabManager);
+    console.log("[main] Saving state for context:", currentContext);
+    try {
+      await sessionState.saveState(tabManager, currentContext);
+      console.log("[main] State saved successfully");
+    } catch (err) {
+      console.error("[main] Error saving state:", err);
+    }
+  }
+
   if (watcher) watcher.close();
   unregisterKeyboardShortcuts();
+
+  console.log("[main] Quitting app");
   app.quit();
 }
+
 // -------------------- app lifecycle --------------------
 app.whenReady().then(() => {
   highDPI = isHighDPI();
@@ -351,44 +465,77 @@ const keepAlive = {
   ppid: parseNumberFlag("ppid", 0),
 };
 
-app.on("window-all-closed", () => {
-  performClose();
+app.on("window-all-closed", async () => {
+  console.log("[main] window-all-closed event");
+  await performClose();
 });
 
 app.on("activate", () => {
   if (!mainWin) createWindow();
 });
 
-app.on("will-quit", () => {
+app.on("will-quit", async (e) => {
+  console.log("[main] will-quit event");
+  e.preventDefault();
+
+  if (sessionState && tabManager) {
+    const currentContext = sessionState.getContextKey(tabManager);
+    console.log("[main] will-quit: Saving state for context:", currentContext);
+    try {
+      await sessionState.saveState(tabManager, currentContext);
+      console.log("[main] will-quit: State saved successfully");
+    } catch (err) {
+      console.error("[main] will-quit: Error saving state:", err);
+    }
+  }
+
   unregisterKeyboardShortcuts();
+  app.exit(0);
 });
 
-// -------------------- IPC --------------------
+app.on("before-quit", async (e) => {
+  console.log("[main] before-quit event");
+  e.preventDefault();
+
+  if (sessionState && tabManager) {
+    const currentContext = sessionState.getContextKey(tabManager);
+    console.log(
+      "[main] before-quit: Saving state for context:",
+      currentContext,
+    );
+    try {
+      await sessionState.saveState(tabManager, currentContext);
+      console.log("[main] before-quit: State saved successfully");
+    } catch (err) {
+      console.error("[main] before-quit: Error saving state:", err);
+    }
+  }
+
+  app.exit(0);
+}); // -------------------- IPC --------------------
 
 ipcMain.on("close-window", () => {
   performClose();
 });
 
-ipcMain.on("load-new-pdf", (_event, newPath) => {
+ipcMain.on("load-new-pdf", async (_event, newPath) => {
   if (typeof newPath !== "string" || !newPath.trim()) return;
   const abs = path.resolve(newPath.trim());
   if (!fs.existsSync(abs)) return;
 
   filePath = abs;
-  ensurePdfTabLoaded(abs);
+  await ensurePdfTabLoaded(abs);
   watchFile(abs);
-  sendToPdfView("load-pdf", abs);
 });
 
-ipcMain.on("load-new-md", (_event, newPath) => {
+ipcMain.on("load-new-md", async (_event, newPath) => {
   if (typeof newPath !== "string" || !newPath.trim()) return;
   const abs = path.resolve(newPath.trim());
   if (!fs.existsSync(abs)) return;
 
   filePath = abs;
-  ensureMarkdownTabLoaded(abs);
+  await ensureMarkdownTabLoaded(abs);
   watchFile(abs);
-  sendToMarkdownView("load-md", abs);
 });
 
 ipcMain.handle("read-file", async (_evt, filePath) => {

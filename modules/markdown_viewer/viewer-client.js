@@ -1,11 +1,9 @@
-// markdown_viewer/viewer-client.js
 const container = document.getElementById("viewerContainer");
 const contentEl = document.getElementById("content");
 const { ipcRenderer } = window.electron;
 
 let currentPath = null;
 
-// apply basic config (kept from your version)
 ipcRenderer.on("viewer-config", (cfg) => {
   if (typeof cfg?.bg === "string") {
     document.documentElement.style.setProperty("--bg", cfg.bg);
@@ -18,7 +16,6 @@ ipcRenderer.on("viewer-config", (cfg) => {
   }
 });
 
-// --- simplest possible view-state: just the scroll offsets ---
 function getViewState() {
   return {
     top: container.scrollTop | 0,
@@ -28,7 +25,6 @@ function getViewState() {
 
 async function restoreViewState(state) {
   if (!state) return;
-  // let layout settle after we replace content
   await new Promise((r) =>
     requestAnimationFrame(() => requestAnimationFrame(r)),
   );
@@ -39,20 +35,17 @@ async function restoreViewState(state) {
   container.scrollLeft = Math.min(state.left, maxLeft);
 }
 
-// --- load/reload markdown file, restoring scroll/pan if provided ---
 async function loadMarkdown(filePath, stateToRestore = null) {
   if (typeof filePath !== "string" || !filePath.trim()) return;
   currentPath = filePath.trim();
 
   try {
-    // read file through your invoke bridge (Approach B)
     const md = await window.electron.ipcRenderer.invoke(
       "read-file",
       currentPath,
       { encoding: "utf8" },
     );
 
-    // render via marked
     const { marked } = await import(
       "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js"
     );
@@ -63,7 +56,7 @@ async function loadMarkdown(filePath, stateToRestore = null) {
     if (stateToRestore) {
       await restoreViewState(stateToRestore);
     } else {
-      container.scrollTop = 0; // fresh load -> top
+      container.scrollTop = 0;
       container.scrollLeft = 0;
     }
   } catch (err) {
@@ -72,16 +65,13 @@ async function loadMarkdown(filePath, stateToRestore = null) {
   }
 }
 
-// initial load
 ipcRenderer.on("load-md", (mdPath) => loadMarkdown(mdPath));
 
-// reload with state preservation
 ipcRenderer.on("reload-md", (mdPath) => {
-  const state = getViewState(); // snapshot BEFORE we change content
+  const state = getViewState();
   loadMarkdown(mdPath || currentPath, state);
 });
 
-// close shortcuts (kept from your version)
 document.addEventListener("keydown", (e) => {
   if (
     ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "q") ||
@@ -89,5 +79,24 @@ document.addEventListener("keydown", (e) => {
   ) {
     e.preventDefault();
     ipcRenderer.send("close-window");
+  }
+});
+
+ipcRenderer.on("get-view-state", () => {
+  const state = getViewState();
+  ipcRenderer.sendToHost("view-state-response", state);
+});
+
+ipcRenderer.on("restore-view-state", (state) => {
+  if (state) {
+    restoreViewState(state);
+  }
+});
+
+window.getViewState = getViewState;
+
+ipcRenderer.on("restore-view-state", (state) => {
+  if (state) {
+    restoreViewState(state);
   }
 });
