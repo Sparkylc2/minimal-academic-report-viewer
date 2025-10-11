@@ -378,11 +378,12 @@ container.addEventListener(
 
 let panAnimationId = null;
 let panVelocity = { x: 0, y: 0 };
-const PAN_BASE_SPEED = 3.5;
+const PAN_BASE_SPEED = window.devicePixelRatio > 1 ? 3.5 : 1;
 const PAN_SPEED_MODIFIER = 2.5;
 const PAN_SMOOTH_FACTOR = 0.15;
 
-const activePanKeys = new Set();
+const activePanKeys = new Map();
+const MAX_KEY_HOLD_TIME = 3000;
 
 const DIR_KEYS = new Set([
   "h",
@@ -396,8 +397,6 @@ const DIR_KEYS = new Set([
 ]);
 
 let pageDigitBuffer = "";
-let pageDigitTimer = 0;
-const PAGE_BUFFER_TIMEOUT = 500;
 
 function isEditableTarget(el) {
   if (!el) return false;
@@ -420,13 +419,42 @@ function commitPageBuffer() {
   }
   pageDigitBuffer = "";
 }
+
 function anyDirKeyActive() {
-  for (const k of activePanKeys) if (DIR_KEYS.has(k)) return true;
+  for (const k of activePanKeys.keys()) {
+    if (DIR_KEYS.has(k)) return true;
+  }
   return false;
 }
 
+function clearAllPanKeys() {
+  activePanKeys.clear();
+  panVelocity.x = 0;
+  panVelocity.y = 0;
+}
+
+function cleanupStuckKeys() {
+  const now = Date.now();
+  const toDelete = [];
+
+  for (const [key, timestamp] of activePanKeys.entries()) {
+    if (now - timestamp > MAX_KEY_HOLD_TIME) {
+      toDelete.push(key);
+    }
+  }
+
+  if (toDelete.length > 0) {
+    console.warn("[pdf-viewer] Clearing stuck keys:", toDelete);
+    toDelete.forEach((key) => activePanKeys.delete(key));
+  }
+}
+
 function animatePan() {
-  if (activePanKeys.size) updatePanVelocity();
+  cleanupStuckKeys();
+
+  if (activePanKeys.size > 0) {
+    updatePanVelocity();
+  }
 
   if (Math.abs(panVelocity.x) > 0.1 || Math.abs(panVelocity.y) > 0.1) {
     container.scrollLeft += panVelocity.x;
@@ -494,9 +522,11 @@ document.addEventListener("keydown", (e) => {
     ].includes(key)
   ) {
     e.preventDefault();
-    if (e.shiftKey) activePanKeys.add("shift");
+    if (e.shiftKey && !activePanKeys.has("shift")) {
+      activePanKeys.set("shift", Date.now());
+    }
     if (!activePanKeys.has(key)) {
-      activePanKeys.add(key);
+      activePanKeys.set(key, Date.now());
       updatePanVelocity();
     }
     return;
@@ -517,6 +547,11 @@ document.addEventListener("keydown", (e) => {
 
 document.addEventListener("keyup", (e) => {
   const key = e.key.toLowerCase();
+
+  if (!e.shiftKey) {
+    activePanKeys.delete("shift");
+  }
+
   if (
     [
       "h",
@@ -529,16 +564,62 @@ document.addEventListener("keyup", (e) => {
       "arrowdown",
     ].includes(key)
   ) {
-    if (!e.shiftKey) activePanKeys.delete("shift");
     activePanKeys.delete(key);
     updatePanVelocity();
   }
 });
 
+document.addEventListener(
+  "keydown",
+  (e) => {
+    if (
+      e.key === "Shift" ||
+      e.key === "Control" ||
+      e.key === "Meta" ||
+      e.key === "Alt"
+    ) {
+      if (activePanKeys.has("shift")) {
+        activePanKeys.set("shift", Date.now());
+      }
+    }
+  },
+  true,
+);
+
+document.addEventListener(
+  "keyup",
+  (e) => {
+    if (
+      e.key === "Shift" ||
+      e.key === "Control" ||
+      e.key === "Meta" ||
+      e.key === "Alt"
+    ) {
+      clearAllPanKeys();
+    }
+  },
+  true,
+);
+
 window.addEventListener("blur", () => {
-  activePanKeys.clear();
-  updatePanVelocity();
+  clearAllPanKeys();
 });
+
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) {
+    clearAllPanKeys();
+  }
+});
+
+container.addEventListener(
+  "mousedown",
+  () => {
+    if (activePanKeys.size > 0) {
+      clearAllPanKeys();
+    }
+  },
+  true,
+);
 
 document.addEventListener("keydown", (e) => {
   if (e.defaultPrevented) return;
