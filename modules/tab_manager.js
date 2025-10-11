@@ -59,6 +59,51 @@ class TabManager extends EventEmitter {
     });
   }
 
+  // ---- shared keybinding handler --------------------------------------------
+
+  _setupTabKeyBindings(tab) {
+    const view = tab.view;
+
+    view.webContents.on("before-input-event", (event, input) => {
+      if (input.type !== "keyDown") return;
+
+      const cmdOrCtrl =
+        process.platform === "darwin" ? input.meta : input.control;
+      const key = (input.key || "").toLowerCase();
+
+      if (cmdOrCtrl && key === "t" && !input.shift) {
+        event.preventDefault();
+        this.mainWin.commandPalette?.show();
+      } else if (cmdOrCtrl && input.shift && key === "t") {
+        event.preventDefault();
+        this.reopenClosedTab();
+      } else if (cmdOrCtrl && key === "w") {
+        event.preventDefault();
+        if (tab.type === "web") {
+          this.closeCurrentTab();
+        }
+      } else if (cmdOrCtrl && key === "r") {
+        event.preventDefault();
+        if (tab.type === "web") {
+          view.webContents.reload();
+        } else if (tab.type === "pdf") {
+          view.webContents.send("reload-pdf", tab.target);
+        } else if (tab.type === "markdown") {
+          view.webContents.send("reload-md", tab.target);
+        }
+      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
+        event.preventDefault();
+        this.switchToTabByIndex(parseInt(key, 10));
+      } else if (cmdOrCtrl && key === "arrowleft") {
+        event.preventDefault();
+        this.navigateBack();
+      } else if (cmdOrCtrl && key === "arrowright") {
+        event.preventDefault();
+        this.navigateForward();
+      }
+    });
+  }
+
   // ---- public API -----------------------------------------------------------
 
   setBounds(_view) {
@@ -150,32 +195,8 @@ class TabManager extends EventEmitter {
       view.webContents.send("viewer-config", this.config);
       view.webContents.send("load-pdf", pdfPath);
     });
-    view.webContents.on("before-input-event", (event, input) => {
-      if (input.type !== "keyDown") return;
 
-      const cmdOrCtrl =
-        process.platform === "darwin" ? input.meta : input.control;
-      const key = (input.key || "").toLowerCase();
-
-      if (cmdOrCtrl && key === "t" && !input.shift) {
-        event.preventDefault();
-        this.mainWin.commandPalette?.show();
-      } else if (cmdOrCtrl && input.shift && key === "t") {
-        event.preventDefault();
-        this.reopenClosedTab();
-      } else if (cmdOrCtrl && key === "w") {
-        event.preventDefault();
-      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
-        event.preventDefault();
-        this.switchToTabByIndex(parseInt(key, 10));
-      } else if (cmdOrCtrl && key === "arrowleft") {
-        event.preventDefault();
-        this.navigateBack();
-      } else if (cmdOrCtrl && key === "arrowright") {
-        event.preventDefault();
-        this.navigateForward();
-      }
-    });
+    this._setupTabKeyBindings(tab);
 
     this.switchToTab(id);
     this.emit("tabs-changed");
@@ -244,38 +265,14 @@ class TabManager extends EventEmitter {
       view.webContents.send("load-md", mdPath);
     });
 
-    view.webContents.on("before-input-event", (event, input) => {
-      if (input.type !== "keyDown") return;
-
-      const cmdOrCtrl =
-        process.platform === "darwin" ? input.meta : input.control;
-      const key = (input.key || "").toLowerCase();
-
-      if (cmdOrCtrl && key === "t" && !input.shift) {
-        event.preventDefault();
-        this.mainWin.commandPalette?.show();
-      } else if (cmdOrCtrl && input.shift && key === "t") {
-        event.preventDefault();
-        this.reopenClosedTab();
-      } else if (cmdOrCtrl && key === "w") {
-        event.preventDefault();
-      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
-        event.preventDefault();
-        this.switchToTabByIndex(parseInt(key, 10));
-      } else if (cmdOrCtrl && key === "arrowleft") {
-        event.preventDefault();
-        this.navigateBack();
-      } else if (cmdOrCtrl && key === "arrowright") {
-        event.preventDefault();
-        this.navigateForward();
-      }
-    });
+    this._setupTabKeyBindings(tab);
 
     this.switchToTab(id);
     this.emit("tabs-changed");
 
     return tab;
   }
+
   createWebTab(url) {
     const id = this.nextId++;
 
@@ -316,33 +313,9 @@ class TabManager extends EventEmitter {
     }
 
     view.webContents.loadURL(url);
-    view.webContents.on("before-input-event", (event, input) => {
-      if (input.type !== "keyDown") return;
 
-      const cmdOrCtrl =
-        process.platform === "darwin" ? input.meta : input.control;
-      const key = (input.key || "").toLowerCase();
+    this._setupTabKeyBindings(tab);
 
-      if (cmdOrCtrl && key === "t" && !input.shift) {
-        event.preventDefault();
-        this.mainWin.commandPalette?.show();
-      } else if (cmdOrCtrl && input.shift && key === "t") {
-        event.preventDefault();
-        this.reopenClosedTab();
-      } else if (cmdOrCtrl && key === "w") {
-        event.preventDefault();
-        this.closeCurrentTab();
-      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
-        event.preventDefault();
-        this.switchToTabByIndex(parseInt(key, 10));
-      } else if (cmdOrCtrl && key === "arrowleft") {
-        event.preventDefault();
-        this.navigateBack();
-      } else if (cmdOrCtrl && key === "arrowright") {
-        event.preventDefault();
-        this.navigateForward();
-      }
-    });
     view.webContents.on("page-title-updated", (_e, title) => {
       tab.title = title;
       this.emit("tabs-changed");
@@ -369,6 +342,7 @@ class TabManager extends EventEmitter {
     this.emit("tabs-changed");
     return tab;
   }
+
   getLastWebTab() {
     for (let i = this.tabOrder.length - 1; i >= 0; i--) {
       const tab = this.tabs.get(this.tabOrder[i]);
@@ -376,6 +350,7 @@ class TabManager extends EventEmitter {
     }
     return null;
   }
+
   getOrCreateWebTab(url) {
     return this.createWebTab(url);
   }
