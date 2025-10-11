@@ -4,10 +4,10 @@ This is a minimal PDF and Markdown viewer built for keyboard-driven workflows. T
 
 The viewer has grown to include workspace management, a quick reference system for sources, and web browsing for research. It's designed to be lightweight and keep everything accessible via keyboard shortcuts.
 
-### The viewer
+### The Viewer
 <img width="504" height="327.33" alt="Screenshot 2025-10-01 at 13 54 46" src="https://github.com/user-attachments/assets/9bf064ce-430b-4e67-b7f7-de61a8034c6a" />
 
-### The command palette/search bar
+### The Command Palette/Search Bar
 <img width="504" height="327.33" alt="Screenshot 2025-10-01 at 14 14 40" src="https://github.com/user-attachments/assets/48969206-f0b4-4bbe-87f9-8cd2a2d91b76" />
 
 ### Search Results
