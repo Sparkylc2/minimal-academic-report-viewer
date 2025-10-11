@@ -3,12 +3,17 @@
 
 ### The viewer
 <img width="504" height="327.33" alt="Screenshot 2025-10-01 at 13 54 46" src="https://github.com/user-attachments/assets/9bf064ce-430b-4e67-b7f7-de61a8034c6a" />
+
 ### The command palette/search bar
 <img width="504" height="327.33" alt="Screenshot 2025-10-01 at 14 14 40" src="https://github.com/user-attachments/assets/48969206-f0b4-4bbe-87f9-8cd2a2d91b76" />
+
 ### Search Results
 <img width="504" height="327.33" alt="Screenshot 2025-10-01 at 13 55 15" src="https://github.com/user-attachments/assets/5999e293-b344-4877-b143-a5990bf77da2" />
 
+### The Quick List
 <img width="640" height="360" alt="Screenshot 2025-10-11 at 12 38 56" src="https://github.com/user-attachments/assets/a84b3ab4-6d38-4350-b5f2-8a22c8196a13" />
+
+### The Workspace List
 <img width="640" height="360" alt="Screenshot 2025-10-11 at 12 39 17" src="https://github.com/user-attachments/assets/676c92e4-0ebe-4297-951f-bab3476d2dac" />
 
 This is a minimal PDF and Markdown viewer built for keyboard-driven workflows. There's no title bar, menu bar, or toolbars, just the content. I made this because I wanted something that matched my borderless terminal setup and didn't get in the way while writing reports.
