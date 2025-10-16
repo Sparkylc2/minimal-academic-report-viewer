@@ -22,7 +22,10 @@ const MarkdownViewer = require("./modules/markdown_viewer/viewer");
 const SessionState = require("./modules/session_state");
 const WorkspaceManager = require("./modules/workspace_manager");
 const WorkspaceSwitcher = require("./modules/workspace_switcher/workspace_switcher");
+const ConfigManager = require("./modules/config/config_manager");
 
+const eventBus = require("./modules/event_bus");
+const ipcBridge = require("./modules/ipc_bridge");
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
 
@@ -75,14 +78,16 @@ const margins = {
   left: parseNumberFlag("marginLeft", 0),
 };
 
-const viewerConfig = {
-  pageGap: parseNumberFlag("pageGap", 16),
-  pageRadius: parseNumberFlag("pageRadius", 8),
-  fit: parseEnumFlag("fit", new Set(["width", "height", "auto"]), "auto"),
-  bg: parseStringFlag("bg", "#181616"),
-  margins,
-  widthPercent: Math.min(1, parseNumberFlag("widthPercent", 0.95)),
-};
+let viewerConfig = null;
+let config = null;
+// const viewerConfig = {
+//   pageGap: parseNumberFlag("pageGap", 16),
+//   pageRadius: parseNumberFlag("pageRadius", 8),
+//   fit: parseEnumFlag("fit", new Set(["width", "height", "auto"]), "auto"),
+//   bg: parseStringFlag("bg", "#181616"),
+//   margins,
+//   widthPercent: Math.min(1, parseNumberFlag("widthPercent", 0.95)),
+// };
 
 function isHighDPI() {
   const scaleFactor = screen.getPrimaryDisplay().scaleFactor;
@@ -180,6 +185,9 @@ let markdownViewer = null;
 let sessionState = null;
 let workspaceManager = null;
 let workspaceSwitcher = null;
+let configManager = null;
+
+let stateBundle = null;
 
 let filePath = null;
 const initialWorkingDir = extractWorkingDir();
@@ -646,10 +654,10 @@ async function createWindow() {
     backgroundColor: viewerConfig.bg || "#181616",
   });
 
-  tabManager = new TabManager(mainWin, viewerConfig);
+  tabManager = new TabManager(mainWin, viewerConfig, config);
   tabManager.on("all-tabs-closed", () => performClose());
 
-  tabBar = new TabBar(mainWin, tabManager, highDPI, viewerConfig);
+  tabBar = new TabBar(mainWin, tabManager, highDPI, config.tabs);
   tabBar.show();
 
   commandPalette = new CommandPalette(mainWin, tabManager, viewerConfig);
@@ -680,6 +688,25 @@ async function createWindow() {
   workspaceSwitcher.on("workspace-renamed", () => {
     updateQuickListContext();
   });
+
+  stateBundle = {
+    mainWin,
+    commandPalette,
+    tabManager,
+    tabBar,
+    aiChat,
+    quickList,
+    markdownViewer,
+    sessionState,
+    workspaceManager,
+    workspaceSwitcher,
+    configManager,
+    highDPI,
+    config,
+    viewerConfig,
+  };
+
+  tabBar.setStateBundle(stateBundle);
 
   registerKeyboardShortcuts();
 
@@ -742,6 +769,12 @@ function registerKeyboardShortcuts() {
       quickList.toggle();
     }
   });
+  //
+  // globalShortcut.register("CommandOrControl+Shift+.", () => {
+  //   if (mainWin && !mainWin.isDestroyed() && tabBar) {
+  //     tabBar.toggle();
+  //   }
+  // });
 
   globalShortcut.register("CommandOrControl+Shift+/", () => {
     if (
@@ -803,13 +836,30 @@ async function performClose() {
 }
 
 // -------------------- app lifecycle --------------------
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  configManager = new ConfigManager();
+  await configManager.init();
+
+  config = configManager.config;
+
   highDPI = isHighDPI();
   if (highDPI) {
-    Object.keys(viewerConfig.margins).forEach((k) => {
-      viewerConfig.margins[k] = Math.round(viewerConfig.margins[k] * 2);
+    Object.keys(config.appearance.margins).forEach((k) => {
+      config.appearance.margins[k] = Math.round(
+        config.appearance.margins[k] * 2,
+      );
     });
   }
+
+  viewerConfig = {
+    pageGap: config.appearance.pageGap,
+    pageRadius: config.appearance.pageRadius,
+    fit: config.pdfViewer.defaultFit,
+    bg: config.appearance.background,
+    margins: config.appearance.margins,
+    widthPercent: config.appearance.widthPercent,
+  };
+
   createWindow();
   if (keepAlive.ppid && Number.isFinite(keepAlive.ppid)) {
     const ppid = keepAlive.ppid;

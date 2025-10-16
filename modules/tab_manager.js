@@ -1,14 +1,17 @@
 const { WebContentsView, View } = require("electron");
 const path = require("path");
 const EventEmitter = require("events");
+const eventBus = require("./event_bus");
 
 class TabManager extends EventEmitter {
-  constructor(mainWin, config) {
+  constructor(mainWin, config, newConfig) {
     super();
     this.mainWin = mainWin;
-    this.config = config || {
-      margins: { top: 36, right: 0, bottom: 0, left: 0 },
-    };
+
+    this.config = config;
+    this.newConfig = newConfig;
+    this.shortcuts = [];
+
     this.tabs = new Map();
     this.tabOrder = [];
     this.activeTab = null;
@@ -61,14 +64,46 @@ class TabManager extends EventEmitter {
 
   // ---- shared keybinding handler --------------------------------------------
 
+  _registerShortcut(shortcut, handler) {
+    this.shortcuts.push({ shortcut, handler });
+  }
+
+  _parseShortcut(shortcut) {
+    const parts = shortcut.split("+");
+    const key = parts.pop().toLowerCase();
+    const modifiers = parts.map((p) => p.toLowerCase());
+    return { key, modifiers };
+  }
+
   _setupTabKeyBindings(tab) {
+    this._registerShortcut(this.newConfig.keyboard.tabs.toggleTabBar, () => {
+      eventBus.emit("tab-bar:toggle");
+      // this.mainWin.webContents.send("toggle-tab-bar");
+    });
     const view = tab.view;
 
     view.webContents.on("before-input-event", (event, input) => {
       if (input.type !== "keyDown") return;
 
+      this.shortcuts.forEach(({ shortcut, handler }) => {
+        const { key, modifiers } = this._parseShortcut(shortcut);
+        const cmdOrCtrl = input.meta || input.control;
+        const alt = input.alt;
+        const shift = input.shift;
+
+        if (key == (input.code || "").toLowerCase()) {
+          if (modifiers.includes("commandorcontrol") && !cmdOrCtrl) return;
+          if (modifiers.includes("alt") && !alt) return;
+          if (modifiers.includes("shift") && !shift) return;
+          if (modifiers.length === 0 && (cmdOrCtrl || alt || shift)) return;
+          event.preventDefault();
+          handler();
+        }
+      });
+
       const cmdOrCtrl =
         process.platform === "darwin" ? input.meta : input.control;
+
       const key = (input.key || "").toLowerCase();
 
       if (cmdOrCtrl && key === "t" && !input.shift) {
@@ -192,7 +227,7 @@ class TabManager extends EventEmitter {
     const viewerPath = path.join(__dirname, "pdf_viewer", "viewer.html");
     view.webContents.loadFile(viewerPath);
     view.webContents.on("did-finish-load", () => {
-      view.webContents.send("viewer-config", this.config);
+      view.webContents.send("viewer-config", this.config.appearance);
       view.webContents.send("load-pdf", pdfPath);
     });
 
