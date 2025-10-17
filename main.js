@@ -12,7 +12,7 @@ const fs = require("fs");
 const fsp = require("fs/promises");
 const chokidar = require("chokidar");
 
-const { debugLog } = require("./modules/debug");
+const { debugLog } = require("./modules/utils");
 const CommandPalette = require("./modules/command_palette/palette");
 const TabManager = require("./modules/tab_manager");
 const TabBar = require("./modules/tab_bar/tab_bar");
@@ -24,8 +24,6 @@ const WorkspaceManager = require("./modules/workspace_manager");
 const WorkspaceSwitcher = require("./modules/workspace_switcher/workspace_switcher");
 const ConfigManager = require("./modules/config/config_manager");
 
-const eventBus = require("./modules/event_bus");
-const ipcBridge = require("./modules/ipc_bridge");
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
 
@@ -186,8 +184,6 @@ let sessionState = null;
 let workspaceManager = null;
 let workspaceSwitcher = null;
 let configManager = null;
-
-let stateBundle = null;
 
 let filePath = null;
 const initialWorkingDir = extractWorkingDir();
@@ -641,6 +637,25 @@ async function restoreSessionState(state, mainFilePath, mainFileType) {
   }
 }
 
+function setupEmitHandlers() {
+  workspaceSwitcher.on("switch-workspace", async (workspaceId) => {
+    await switchToWorkspace(workspaceId);
+  });
+
+  workspaceSwitcher.on("delete-workspace", async (workspaceId) => {
+    await deleteWorkspace(workspaceId);
+  });
+
+  workspaceSwitcher.on("workspace-renamed", () => {
+    updateQuickListContext();
+  });
+
+  tabManager.on("all-tabs-closed", () => performClose());
+  tabManager.on("tab-bar:toggle", () => tabBar.toggle());
+  tabManager.on("command-palette:show", () => {
+    commandPalette.show();
+  });
+}
 // -------------------- window & view --------------------
 async function createWindow() {
   mainWin = new BaseWindow({
@@ -655,7 +670,6 @@ async function createWindow() {
   });
 
   tabManager = new TabManager(mainWin, viewerConfig, config);
-  tabManager.on("all-tabs-closed", () => performClose());
 
   tabBar = new TabBar(mainWin, tabManager, highDPI, config.tabs);
   tabBar.show();
@@ -673,41 +687,10 @@ async function createWindow() {
   );
 
   quickList.parentWin.workspaceManager = workspaceManager;
-
   mainWin.tabManager = tabManager;
   mainWin.commandPalette = commandPalette;
 
-  workspaceSwitcher.on("switch-workspace", async (workspaceId) => {
-    await switchToWorkspace(workspaceId);
-  });
-
-  workspaceSwitcher.on("delete-workspace", async (workspaceId) => {
-    await deleteWorkspace(workspaceId);
-  });
-
-  workspaceSwitcher.on("workspace-renamed", () => {
-    updateQuickListContext();
-  });
-
-  stateBundle = {
-    mainWin,
-    commandPalette,
-    tabManager,
-    tabBar,
-    aiChat,
-    quickList,
-    markdownViewer,
-    sessionState,
-    workspaceManager,
-    workspaceSwitcher,
-    configManager,
-    highDPI,
-    config,
-    viewerConfig,
-  };
-
-  tabBar.setStateBundle(stateBundle);
-
+  setupEmitHandlers();
   registerKeyboardShortcuts();
 
   if (initialTarget) {

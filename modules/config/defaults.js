@@ -82,6 +82,7 @@ module.exports = {
       navigateBack: "CommandOrControl+Left",
       navigateForward: "CommandOrControl+Right",
       toggleTabBar: "CommandOrControl+Comma",
+      reloadTab: "CommandOrControl+R",
       // tab numbers 1-9 are automatically mapped to CommandOrControl+1-9
       switchToTab: true,
     },

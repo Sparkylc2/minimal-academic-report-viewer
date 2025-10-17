@@ -14,7 +14,6 @@ const schema = require("./schema");
 class ConfigManager extends EventEmitter {
   constructor() {
     super();
-
     this.configDir = this._getConfigDir();
     this.configPath = path.join(this.configDir, "config.json5");
 
@@ -33,6 +32,7 @@ class ConfigManager extends EventEmitter {
     this.watcher = null;
 
     this.config = null;
+    this.reset();
   }
 
   async init() {
@@ -66,6 +66,7 @@ class ConfigManager extends EventEmitter {
   async _createDefaultConfig() {
     try {
       const content = this._generateCommentedConfig();
+
       await fsp.writeFile(this.configPath, content, "utf8");
       console.log(
         "[ConfigManager] Created default config at:",
@@ -179,6 +180,7 @@ class ConfigManager extends EventEmitter {
       newTab: "${d.keyboard.tabs.newTab}",
       closeTab: "${d.keyboard.tabs.closeTab}",
       reopenTab: "${d.keyboard.tabs.reopenTab}",
+      reloadTab: "${d.keyboard.tabs.reloadTab}",
       navigateBack: "${d.keyboard.tabs.navigateBack}",
       navigateForward: "${d.keyboard.tabs.navigateForward}",
       toggleTabBar: "${d.keyboard.tabs.toggleTabBar}",
@@ -320,6 +322,7 @@ class ConfigManager extends EventEmitter {
   }
 
   _validateConfig(config) {
+    console.log(config);
     const valid = this.validate(config);
 
     if (!valid) {

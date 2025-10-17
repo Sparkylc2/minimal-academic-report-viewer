@@ -1,9 +1,11 @@
 const { WebContentsView } = require("electron");
 const path = require("path");
-const eventBus = require("../event_bus");
 
 class TabBar {
   constructor(mainWin, tabManager, isHighDPI, tabConfig) {
+    this.mainWin = mainWin;
+    this.tabManager = tabManager;
+    this.aiChat = null;
     this.view = null;
     this.visible = tabConfig.show;
 
@@ -13,13 +15,6 @@ class TabBar {
     this.create();
 
     if (!this.visible) this.hide();
-    this._setupEventListeners();
-  }
-
-  _setupEventListeners() {
-    eventBus.on("tab-bar:toggle", () => {
-      this.toggle();
-    });
   }
 
   create() {
@@ -46,6 +41,7 @@ class TabBar {
     });
 
     this.tabManager.on("toggle-tab-bar", () => {
+      console.log("receiving toggle");
       this.toggle();
     });
 
@@ -114,17 +110,6 @@ class TabBar {
       this.visible = false;
       this.mainWin.contentView.removeChildView(this.view);
     }
-  }
-
-  setStateBundle(stateBundle) {
-    this.stateBundle = stateBundle;
-    this._stateBundleRoutine();
-  }
-
-  _stateBundleRoutine() {
-    this.mainWin = this.stateBundle.mainWin;
-    this.tabManager = this.stateBundle.tabManager;
-    this.isHighDPI = this.stateBundle.isHighDPI;
   }
 }
 

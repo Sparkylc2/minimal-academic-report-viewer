@@ -1,6 +1,6 @@
 const { default: Store } = require("electron-store");
 const path = require("path");
-const { debugLog } = require("./debug");
+const { debugLog } = require("./utils");
 
 class WorkspaceManager {
   constructor() {

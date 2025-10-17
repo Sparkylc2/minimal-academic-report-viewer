@@ -44,7 +44,6 @@ class MarkdownViewer {
     const viewerPath = path.join(__dirname, "viewer.html");
     await this.view.webContents.loadFile(viewerPath);
     this.view.webContents.send("viewer-config", this.config);
-
     this.view.webContents.send("load-md", filePath);
     this.watchFile(filePath);
 

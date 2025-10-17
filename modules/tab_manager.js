@@ -1,16 +1,16 @@
 const { WebContentsView, View } = require("electron");
 const path = require("path");
 const EventEmitter = require("events");
-const eventBus = require("./event_bus");
+const { createKeybindingManager } = require("./keybinding_manager");
 
 class TabManager extends EventEmitter {
   constructor(mainWin, config, newConfig) {
     super();
     this.mainWin = mainWin;
-
     this.config = config;
     this.newConfig = newConfig;
-    this.shortcuts = [];
+
+    this.keys = createKeybindingManager("tab-manager");
 
     this.tabs = new Map();
     this.tabOrder = [];
@@ -31,6 +31,22 @@ class TabManager extends EventEmitter {
     });
 
     this._layoutInsetView();
+    this._registerShortcuts();
+  }
+
+  _sendToActive(channel, ...args) {
+    const tab = this.tabs.get(this.activeTab);
+    if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.send(channel, ...args);
+    }
+  }
+
+  _broadcast(channel, ...args) {
+    for (const { view } of this.tabs.values()) {
+      if (view && view.webContents && !view.webContents.isDestroyed()) {
+        view.webContents.send(channel, ...args);
+      }
+    }
   }
 
   // ---- layout helpers -------------------------------------------------------
@@ -62,85 +78,89 @@ class TabManager extends EventEmitter {
     });
   }
 
-  // ---- shared keybinding handler --------------------------------------------
-
-  _registerShortcut(shortcut, handler) {
-    this.shortcuts.push({ shortcut, handler });
-  }
-
-  _parseShortcut(shortcut) {
-    const parts = shortcut.split("+");
-    const key = parts.pop().toLowerCase();
-    const modifiers = parts.map((p) => p.toLowerCase());
-    return { key, modifiers };
-  }
-
-  _setupTabKeyBindings(tab) {
-    this._registerShortcut(this.newConfig.keyboard.tabs.toggleTabBar, () => {
-      eventBus.emit("tab-bar:toggle");
-      // this.mainWin.webContents.send("toggle-tab-bar");
+  // ---- global shortcut registration ------------------------------------------
+  async _registerShortcuts() {
+    const keyConfig = this.newConfig.keyboard.tabs;
+    await this.keys.register(keyConfig.toggleTabBar, () => {
+      this.emit("tab-bar:toggle");
     });
-    const view = tab.view;
 
-    view.webContents.on("before-input-event", (event, input) => {
-      if (input.type !== "keyDown") return;
+    await this.keys.register(keyConfig.newTab, () => {
+      this.emit("command-palette:show");
+    });
 
-      this.shortcuts.forEach(({ shortcut, handler }) => {
-        const { key, modifiers } = this._parseShortcut(shortcut);
-        const cmdOrCtrl = input.meta || input.control;
-        const alt = input.alt;
-        const shift = input.shift;
-
-        if (key == (input.code || "").toLowerCase()) {
-          if (modifiers.includes("commandorcontrol") && !cmdOrCtrl) return;
-          if (modifiers.includes("alt") && !alt) return;
-          if (modifiers.includes("shift") && !shift) return;
-          if (modifiers.length === 0 && (cmdOrCtrl || alt || shift)) return;
-          event.preventDefault();
-          handler();
-        }
-      });
-
-      const cmdOrCtrl =
-        process.platform === "darwin" ? input.meta : input.control;
-
-      const key = (input.key || "").toLowerCase();
-
-      if (cmdOrCtrl && key === "t" && !input.shift) {
-        event.preventDefault();
-        this.mainWin.commandPalette?.show();
-      } else if (cmdOrCtrl && input.shift && key === "t") {
-        event.preventDefault();
-        this.reopenClosedTab();
-      } else if (cmdOrCtrl && key === "w") {
-        event.preventDefault();
-        if (tab.type === "web") {
-          this.closeCurrentTab();
-        }
-      } else if (cmdOrCtrl && key === "r") {
-        event.preventDefault();
-        if (tab.type === "web") {
-          view.webContents.reload();
-        } else if (tab.type === "pdf") {
-          view.webContents.send("reload-pdf", tab.target);
-        } else if (tab.type === "markdown") {
-          view.webContents.send("reload-md", tab.target);
-        }
-      } else if (cmdOrCtrl && key >= "1" && key <= "9") {
-        event.preventDefault();
-        this.switchToTabByIndex(parseInt(key, 10));
-      } else if (cmdOrCtrl && key === "arrowleft") {
-        event.preventDefault();
-        this.navigateBack();
-      } else if (cmdOrCtrl && key === "arrowright") {
-        event.preventDefault();
-        this.navigateForward();
+    await this.keys.register(keyConfig.closeTab, () => {
+      const activeTab = this.tabs.get(this.activeTab);
+      if (activeTab && activeTab.type === "web") {
+        this.closeCurrentTab();
       }
     });
+
+    await this.keys.register(keyConfig.reopenTab, () => {
+      this.reopenClosedTab();
+    });
+
+    await this.keys.register(keyConfig.reloadTab, () => {
+      const activeTab = this.tabs.get(this.activeTab);
+      if (!activeTab) return;
+
+      if (activeTab.type === "web") {
+        activeTab.view.webContents.reload();
+      } else if (activeTab.type === "pdf") {
+        activeTab.view.webContents.send("reload-pdf", activeTab.target);
+      } else if (activeTab.type === "markdown") {
+        activeTab.view.webContents.send("reload-md", activeTab.target);
+      }
+    });
+
+    for (let i = 1; i <= 9; i++) {
+      await this.keys.register(`CommandOrControl+${i}`, () => {
+        this.switchToTabByIndex(i);
+      });
+    }
+
+    await this.keys.register("CommandOrControl+ArrowLeft", () => {
+      this.navigateBack();
+    });
+
+    await this.keys.register("CommandOrControl+ArrowRight", () => {
+      this.navigateForward();
+    });
+
+    console.log("TabManager shortcuts registered:", this.keys.getShortcuts());
   }
 
-  // ---- public API -----------------------------------------------------------
+  _registerShortcut(shortcut, handler) {
+    if (!shortcut) return;
 
+    try {
+      const parsed = this._parseShortcut(shortcut);
+      this.shortcuts.push({
+        shortcut,
+        parsed,
+        handler,
+        id: `shortcut_${this.shortcuts.length}`,
+      });
+    } catch (error) {
+      console.error(
+        `Failed to register shortcut "${shortcut}":`,
+        error.message,
+      );
+    }
+  }
+
+  // ---- single global key handler ---------------------------------------------
+  _setupTabKeyBindings(tab) {
+    this.keys.attachToWebContents(tab.view.webContents);
+  }
+
+  _sendToActive(channel, ...args) {
+    const tab = this.tabs.get(this.activeTab);
+    if (tab && tab.view && !tab.view.webContents.isDestroyed()) {
+      tab.view.webContents.send(channel, ...args);
+    }
+  }
+  // ---- public API -----------------------------------------------------------
   setBounds(_view) {
     this._layoutInsetView();
     if (_view) this._fitTabToInset(_view);
