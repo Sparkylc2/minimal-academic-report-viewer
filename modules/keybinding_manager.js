@@ -11,9 +11,8 @@ class KeybindingManager {
     this.isSetup = false;
     this.context = this._detectContext();
     this.globalHandler = null;
-    this.debugMode = false; // Can be enabled for troubleshooting
+    this.debugMode = false;
 
-    // Auto-setup when first shortcut is registered
     this._autoSetupPromise = null;
   }
 
@@ -22,13 +21,11 @@ class KeybindingManager {
   // ==========================================
 
   _detectContext() {
-    // Check if we're in Node.js
     if (
       typeof process !== "undefined" &&
       process.versions &&
       process.versions.node
     ) {
-      // Check if main or renderer process
       if (process.type === "browser") {
         return "main";
       } else if (process.type === "renderer") {
@@ -36,12 +33,11 @@ class KeybindingManager {
       }
     }
 
-    // Check if we're in a browser/HTML context
     if (typeof window !== "undefined") {
       if (window.electron) {
-        return "html-with-electron"; // HTML with preload
+        return "html-with-electron";
       } else {
-        return "html"; // Pure HTML
+        return "html";
       }
     }
 

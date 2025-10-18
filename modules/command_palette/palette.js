@@ -1,8 +1,9 @@
 const { BrowserWindow, ipcMain } = require("electron");
 const path = require("path");
-
+const { getEventBus } = require("../event_bus");
 class CommandPalette {
   constructor(parentWindow, tabManager, config) {
+    this.eventBus = getEventBus();
     this.parentWin = parentWindow;
     this.paletteWin = null;
     this.isVisible = false;

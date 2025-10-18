@@ -1,8 +1,10 @@
 const { WebContentsView } = require("electron");
 const path = require("path");
+const { getEventBus } = require("../event_bus");
 
 class TabBar {
   constructor(mainWin, tabManager, isHighDPI, tabConfig) {
+    this.bus = getEventBus();
     this.mainWin = mainWin;
     this.tabManager = tabManager;
     this.aiChat = null;
@@ -36,14 +38,19 @@ class TabBar {
 
     this.updateBounds();
 
-    this.tabManager.on("tabs-changed", () => {
+    this.bus.on("tab-bar:tabs-changed", () => {
       this.updateTabs();
     });
-
-    this.tabManager.on("toggle-tab-bar", () => {
-      console.log("receiving toggle");
+    // this.tabManager.on("tabs-changed", () => {
+    //   this.updateTabs();
+    // });
+    this.bus.on("tab-bar:toggle", () => {
       this.toggle();
     });
+    // this.tabManager.on("toggle-tab-bar", () => {
+    //   console.log("receiving toggle");
+    //   this.toggle();
+    // });
 
     this.setupIPC();
   }

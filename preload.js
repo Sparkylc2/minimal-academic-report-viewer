@@ -38,3 +38,19 @@ contextBridge.exposeInMainWorld("electron", {
     },
   },
 });
+
+contextBridge.exposeInMainWorld("bus", {
+  emit: (event, data) => {
+    ipcRenderer.send("bus:emit", event, data);
+  },
+  on: (event, handler) => {
+    ipcRenderer.on("bus:event", (_e, eventName, data) => {
+      if (eventName === event) {
+        handler(data);
+      }
+    });
+  },
+  request: async (event, data) => {
+    return await ipcRenderer.invoke("bus:request", event, data);
+  },
+});

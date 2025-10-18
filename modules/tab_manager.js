@@ -2,13 +2,18 @@ const { WebContentsView, View } = require("electron");
 const path = require("path");
 const EventEmitter = require("events");
 const { createKeybindingManager } = require("./keybinding_manager");
+const { getEventBus } = require("./event_bus");
 
-class TabManager extends EventEmitter {
+const BaseComponent = require("./base_component");
+
+class TabManager extends BaseComponent {
   constructor(mainWin, config, newConfig) {
     super();
     this.mainWin = mainWin;
     this.config = config;
     this.newConfig = newConfig;
+
+    this.bus = getEventBus();
 
     this.keys = createKeybindingManager("tab-manager");
 
@@ -82,11 +87,11 @@ class TabManager extends EventEmitter {
   async _registerShortcuts() {
     const keyConfig = this.newConfig.keyboard.tabs;
     await this.keys.register(keyConfig.toggleTabBar, () => {
-      this.emit("tab-bar:toggle");
+      this.bus.emit("tab-bar:toggle");
     });
 
     await this.keys.register(keyConfig.newTab, () => {
-      this.emit("command-palette:show");
+      this.bus.emit("command-palette:show");
     });
 
     await this.keys.register(keyConfig.closeTab, () => {
@@ -212,7 +217,7 @@ class TabManager extends EventEmitter {
         tab.view.webContents.send("load-pdf", pdfPath);
 
         this.switchToTab(id);
-        this.emit("tabs-changed");
+        this.bus.emit("tab-bar:tabs-changed");
         return tab;
       }
     }
@@ -254,7 +259,7 @@ class TabManager extends EventEmitter {
     this._setupTabKeyBindings(tab);
 
     this.switchToTab(id);
-    this.emit("tabs-changed");
+    this.bus.emit("tab-bar:tabs-changed");
     return tab;
   }
 
@@ -270,7 +275,7 @@ class TabManager extends EventEmitter {
         tab.view.webContents.send("load-md", mdPath);
 
         this.switchToTab(id);
-        this.emit("tabs-changed");
+        this.bus.emit("tab-bar:tabs-changed");
         return tab;
       }
     }
@@ -323,7 +328,7 @@ class TabManager extends EventEmitter {
     this._setupTabKeyBindings(tab);
 
     this.switchToTab(id);
-    this.emit("tabs-changed");
+    this.bus.emit("tab-bar:tabs-changed");
 
     return tab;
   }
@@ -373,7 +378,7 @@ class TabManager extends EventEmitter {
 
     view.webContents.on("page-title-updated", (_e, title) => {
       tab.title = title;
-      this.emit("tabs-changed");
+      this.bus.emit("tab-bar:tabs-changed");
     });
 
     view.webContents.on("did-navigate", (_e, newUrl) => {
@@ -394,7 +399,7 @@ class TabManager extends EventEmitter {
     });
 
     this.switchToTab(id);
-    this.emit("tabs-changed");
+    this.bus.emit("tab-bar:tabs-changed");
     return tab;
   }
 
@@ -430,7 +435,7 @@ class TabManager extends EventEmitter {
       }
     }
     this.activeTab = id;
-    this.emit("tabs-changed");
+    this.bus.emit("tab-bar:tabs-changed");
   }
 
   switchToTabByIndex(index) {
@@ -481,7 +486,7 @@ class TabManager extends EventEmitter {
     }
 
     this.tabs.delete(id);
-    this.emit("tabs-changed");
+    this.bus.emit("tab-bar:tabs-changed");
     this._emitEmptyIfNeeded();
   }
 

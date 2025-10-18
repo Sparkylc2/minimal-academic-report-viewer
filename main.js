@@ -13,16 +13,32 @@ const fsp = require("fs/promises");
 const chokidar = require("chokidar");
 
 const { debugLog } = require("./modules/utils");
+
+const { getEventBus } = require("./modules/event_bus");
+const { getRegistry } = require("./modules/service_registry");
+const { getChannels } = require("./modules/channels");
+
 const CommandPalette = require("./modules/command_palette/palette");
 const TabManager = require("./modules/tab_manager");
 const TabBar = require("./modules/tab_bar/tab_bar");
-const AIChat = require("./modules/ai_chat/ai_chat");
-const QuickList = require("./modules/quicklist/quicklist");
-const MarkdownViewer = require("./modules/markdown_viewer/viewer");
 const SessionState = require("./modules/session_state");
+const QuickList = require("./modules/quicklist/quicklist");
 const WorkspaceManager = require("./modules/workspace_manager");
 const WorkspaceSwitcher = require("./modules/workspace_switcher/workspace_switcher");
 const ConfigManager = require("./modules/config/config_manager");
+const MarkdownViewer = require("./modules/markdown_viewer/viewer");
+
+const bus = getEventBus();
+const registry = getRegistry();
+const channels = getChannels();
+
+registry.register("bus", bus);
+registry.register("registry", registry);
+registry.register("channels", channels);
+
+global.appEventBus = bus;
+global.appRegistry = registry;
+global.appChannels = channels;
 
 // -------------------- argv helpers --------------------
 const argv = process.argv.slice(process.defaultApp ? 2 : 1);
@@ -177,7 +193,6 @@ let watcher = null;
 let commandPalette = null;
 let tabManager = null;
 let tabBar = null;
-let aiChat = null;
 let quickList = null;
 let markdownViewer = null;
 let sessionState = null;
@@ -272,7 +287,10 @@ function resolveInitialTarget(args, workingDir = null) {
 }
 
 async function ensurePdfTabLoaded(targetPath) {
-  if (!tabManager || !sessionState || !workspaceManager) {
+  const workspaceManager = registry.get("workspaceManager");
+  const sessionState = registry.get("sessionState");
+  const tabManager = registry.get("tabManager");
+  if (!sessionState || !workspaceManager) {
     debugLog("[main] ensurePdfTabLoaded: missing manager");
     return;
   }
@@ -356,6 +374,9 @@ async function ensurePdfTabLoaded(targetPath) {
 }
 
 async function ensureMarkdownTabLoaded(targetPath) {
+  const workspaceManager = registry.get("workspaceManager");
+  const sessionState = registry.get("sessionState");
+  const tabManager = registry.get("tabManager");
   if (!tabManager || !sessionState || !workspaceManager) {
     debugLog("[main] ensureMarkdownTabLoaded: missing manager");
     return;
@@ -439,6 +460,9 @@ async function ensureMarkdownTabLoaded(targetPath) {
   }
 }
 async function updateCurrentWorkspaceState() {
+  const workspaceManager = registry.get("workspaceManager");
+  const sessionState = registry.get("sessionState");
+  const tabManager = registry.get("tabManager");
   if (!workspaceManager || !sessionState || !tabManager) return;
 
   const currentWorkspace = workspaceManager.getActiveWorkspace();
@@ -461,6 +485,9 @@ async function updateCurrentWorkspaceState() {
   );
 }
 async function switchToWorkspace(workspaceId) {
+  const workspaceManager = registry.get("workspaceManager");
+  const sessionState = registry.get("sessionState");
+  const tabManager = registry.get("tabManager");
   if (!workspaceManager || !tabManager || !sessionState) return;
 
   debugLog("[main] Switching to workspace:", workspaceId);
@@ -545,6 +572,8 @@ async function switchToWorkspace(workspaceId) {
 }
 
 async function deleteWorkspace(workspaceId) {
+  const workspaceManager = registry.get("workspaceManager");
+  const workspaceSwitcher = registry.get("workspaceSwitcher");
   if (!workspaceManager) return;
 
   const success = workspaceManager.deleteWorkspace(workspaceId);
@@ -638,6 +667,7 @@ async function restoreSessionState(state, mainFilePath, mainFileType) {
 }
 
 function setupEmitHandlers() {
+  bus.on();
   workspaceSwitcher.on("switch-workspace", async (workspaceId) => {
     await switchToWorkspace(workspaceId);
   });
@@ -650,14 +680,32 @@ function setupEmitHandlers() {
     updateQuickListContext();
   });
 
-  tabManager.on("all-tabs-closed", () => performClose());
-  tabManager.on("tab-bar:toggle", () => tabBar.toggle());
-  tabManager.on("command-palette:show", () => {
+  // tabManager.on("all-tabs-closed", () => performClose());
+  // tabManager.on("tab-bar:toggle", () => tabBar.toggle());
+  // tabManager.on("command-palette:show", () => {
+  //   commandPalette.show();
+  // });
+  bus.on("all-tabs-closed", () => performClose());
+  bus.on("tab-bar:toggle", () => tabBar.toggle());
+  bus.on("command-palette:show", () => {
     commandPalette.show();
   });
 }
 // -------------------- window & view --------------------
 async function createWindow() {
+  configManager = new ConfigManager();
+  await configManager.init();
+  registry.register("config", configManager);
+  config = configManager.config;
+  viewerConfig = {
+    pageGap: config.appearance.pageGap,
+    pageRadius: config.appearance.pageRadius,
+    fit: config.pdfViewer.defaultFit,
+    bg: config.appearance.background,
+    margins: config.appearance.margins,
+    widthPercent: config.appearance.widthPercent,
+  };
+
   mainWin = new BaseWindow({
     width: 900,
     height: 1200,
@@ -668,23 +716,40 @@ async function createWindow() {
     hasShadow: false,
     backgroundColor: viewerConfig.bg || "#181616",
   });
+  registry.register("mainWindow", mainWin);
+
+  highDPI = isHighDPI();
+  if (highDPI) {
+    Object.keys(config.appearance.margins).forEach((k) => {
+      config.appearance.margins[k] = Math.round(
+        config.appearance.margins[k] * 2,
+      );
+    });
+  }
 
   tabManager = new TabManager(mainWin, viewerConfig, config);
+  registry.register("tabManager", tabManager);
 
   tabBar = new TabBar(mainWin, tabManager, highDPI, config.tabs);
   tabBar.show();
+  registry.register("tabBar", tabBar);
 
   commandPalette = new CommandPalette(mainWin, tabManager, viewerConfig);
-  aiChat = new AIChat(mainWin, viewerConfig);
+  registry.register("commandPalette", commandPalette);
   quickList = new QuickList(mainWin, tabManager, viewerConfig);
+  registry.register("quickList", quickList);
   markdownViewer = new MarkdownViewer(mainWin, viewerConfig);
+  registry.register("markdownViewer", markdownViewer);
   sessionState = new SessionState();
+  registry.register("sessionState", sessionState);
   workspaceManager = new WorkspaceManager();
+  registry.register("workspaceManager", workspaceManager);
   workspaceSwitcher = new WorkspaceSwitcher(
     mainWin,
     workspaceManager,
     viewerConfig,
   );
+  registry.register("workspaceSwitcher", workspaceSwitcher);
 
   quickList.parentWin.workspaceManager = workspaceManager;
   mainWin.tabManager = tabManager;
@@ -820,29 +885,6 @@ async function performClose() {
 
 // -------------------- app lifecycle --------------------
 app.whenReady().then(async () => {
-  configManager = new ConfigManager();
-  await configManager.init();
-
-  config = configManager.config;
-
-  highDPI = isHighDPI();
-  if (highDPI) {
-    Object.keys(config.appearance.margins).forEach((k) => {
-      config.appearance.margins[k] = Math.round(
-        config.appearance.margins[k] * 2,
-      );
-    });
-  }
-
-  viewerConfig = {
-    pageGap: config.appearance.pageGap,
-    pageRadius: config.appearance.pageRadius,
-    fit: config.pdfViewer.defaultFit,
-    bg: config.appearance.background,
-    margins: config.appearance.margins,
-    widthPercent: config.appearance.widthPercent,
-  };
-
   createWindow();
   if (keepAlive.ppid && Number.isFinite(keepAlive.ppid)) {
     const ppid = keepAlive.ppid;
@@ -928,7 +970,6 @@ app.on("before-quit", async (e) => {
 });
 
 // -------------------- IPC --------------------
-
 ipcMain.on("close-window", () => {
   performClose();
 });
@@ -943,7 +984,8 @@ ipcMain.on("load-new-pdf", async (_event, newPath) => {
   watchFile(abs);
 });
 
-ipcMain.on("load-new-md", async (_event, newPath) => {
+registry.get("bus").on("load-new-md", async (_event, newPath) => {
+  console.log("load");
   if (typeof newPath !== "string" || !newPath.trim()) return;
   const abs = path.resolve(newPath.trim());
   if (!fs.existsSync(abs)) return;
