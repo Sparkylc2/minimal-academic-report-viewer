@@ -40,9 +40,11 @@ async function loadMarkdown(filePath, stateToRestore = null) {
   currentPath = filePath.trim();
 
   try {
-    const md = await window.ipcRenderer.invoke("read-file", currentPath, {
-      encoding: "utf8",
-    });
+    const md = await window.electron.ipcRenderer.invoke(
+      "read-file",
+      currentPath,
+      { encoding: "utf8" },
+    );
 
     const { marked } = await import(
       "https://cdn.jsdelivr.net/npm/marked/lib/marked.esm.js"
