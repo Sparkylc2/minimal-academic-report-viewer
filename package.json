@@ -27,14 +27,16 @@
     "electron-builder": "^25.1.8"
   },
   "dependencies": {
+    "ajv": "^8.12.0",
     "chokidar": "^4.0.3",
     "electron-store": "^11.0.0",
     "fetch": "^1.1.0",
-    "json5": "^2.2.3",
     "fuzzysort": "^3.1.0",
+    "json5": "^2.2.3",
     "marked": "^16.4.0",
-    "pdfjs-dist": "^5.4.149",
-    "ajv": "^8.12.0"
+    "msgpack-lite": "^0.1.26",
+    "net": "^1.0.2",
+    "pdfjs-dist": "^5.4.149"
   },
   "bin": {
     "arview": "./cli.js"

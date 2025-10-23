@@ -1,5 +1,6 @@
 import * as pdfjsLib from "../../node_modules/pdfjs-dist/build/pdf.mjs";
 import * as pdfjsViewer from "../../node_modules/pdfjs-dist/web/pdf_viewer.mjs";
+import { debugLog } from "../utils.js";
 
 pdfjsLib.GlobalWorkerOptions.workerSrc = new URL(
   "../../node_modules/pdfjs-dist/build/pdf.worker.mjs",
@@ -314,11 +315,21 @@ function endPinch() {
 
   updatePageGapForScale(targetScale);
   pdfViewer.currentScale = targetScale;
+
   const newScrollLeft = contentX * targetScale - pointerInViewport.x;
   const newScrollTop = contentY * targetScale - pointerInViewport.y;
 
-  container.scrollLeft = newScrollLeft;
-  container.scrollTop = newScrollTop;
+  const maxScrollLeft = Math.max(
+    0,
+    container.scrollWidth - container.clientWidth,
+  );
+  const maxScrollTop = Math.max(
+    0,
+    container.scrollHeight - container.clientHeight,
+  );
+
+  container.scrollLeft = Math.max(0, Math.min(newScrollLeft, maxScrollLeft));
+  container.scrollTop = Math.max(0, Math.min(newScrollTop, maxScrollTop));
 
   requestAnimationFrame(() => {
     requestAnimationFrame(() => {
@@ -693,3 +704,131 @@ ipcRenderer.on("restore-view-state", (state) => {
     restoreViewState(state);
   }
 });
+
+container.addEventListener(
+  "click",
+  async (e) => {
+    if (!e.ctrlKey && !e.metaKey) return;
+
+    e.preventDefault();
+    e.stopPropagation();
+
+    const pageEl = e.target.closest(".page");
+    if (!pageEl) return;
+
+    const pageNumber = parseInt(pageEl.getAttribute("data-page-number"));
+    if (!pageNumber) return;
+
+    const canvas = pageEl.querySelector("canvas");
+    if (!canvas) return;
+
+    const rect = canvas.getBoundingClientRect();
+    const scale = pdfViewer.currentScale || 1;
+
+    const clickX = e.clientX - rect.left;
+    const clickY = e.clientY - rect.top;
+
+    const x = (clickX / scale) * (72 / 96);
+    const y = (clickY / scale) * (72 / 96);
+
+    debugLog(`[SyncTeX] Click at page ${pageNumber}, x=${x}, y=${y}`);
+    debugLog(
+      `[SyncTeX] Canvas size: ${rect.width}x${rect.height}, scale: ${scale}`,
+    );
+
+    ipcRenderer.send("synctex-click", {
+      page: pageNumber,
+      x: Math.round(x),
+      y: Math.round(y),
+    });
+  },
+  true,
+);
+
+ipcRenderer.on("synctex-goto-location", async (location) => {
+  debugLog("Going to location:", location);
+  const { page, x, y } = location;
+
+  debugLog(`[SyncTeX] Jumping to page ${page}, position (${x}, ${y})`);
+
+  if (page !== pdfViewer.currentPageNumber) {
+    pdfViewer.currentPageNumber = page;
+
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+
+  const pageView = pdfViewer._pages?.[page - 1];
+  if (!pageView) {
+    console.error("[SyncTeX] Could not find page view");
+    return;
+  }
+
+  const pageEl = pageView.div;
+  const rect = pageEl.getBoundingClientRect();
+
+  const scale = pdfViewer.currentScale || 1;
+  const screenX = x * scale * (96 / 72);
+  const screenY = y * scale * (96 / 72);
+
+  const targetScrollLeft =
+    pageEl.offsetLeft + screenX - container.clientWidth / 2;
+  const targetScrollTop =
+    pageEl.offsetTop + screenY - container.clientHeight / 2;
+
+  container.scrollTo({
+    left: Math.max(0, targetScrollLeft),
+    top: Math.max(0, targetScrollTop),
+    behavior: "smooth",
+  });
+
+  createSyncHighlight(pageEl, screenX, screenY);
+});
+
+function createSyncHighlight(pageEl, x, y) {
+  const existing = document.getElementById("synctex-highlight");
+  if (existing) existing.remove();
+
+  const highlight = document.createElement("div");
+  highlight.id = "synctex-highlight";
+  highlight.style.cssText = `
+    position: absolute;
+    left: ${x}px;
+    top: ${y}px;
+    width: 20px;
+    height: 20px;
+    margin-left: -10px;
+    margin-top: -10px;
+    border: 2px solid #ff6b6b;
+    border-radius: 50%;
+    background: rgba(255, 107, 107, 0.2);
+    pointer-events: none;
+    z-index: 1000;
+    animation: synctex-pulse 1s ease-out;
+  `;
+
+  if (!document.getElementById("synctex-highlight-style")) {
+    const style = document.createElement("style");
+    style.id = "synctex-highlight-style";
+    style.textContent = `
+      @keyframes synctex-pulse {
+        0% {
+          transform: scale(0.5);
+          opacity: 1;
+        }
+        50% {
+          transform: scale(1.5);
+          opacity: 0.8;
+        }
+        100% {
+          transform: scale(1);
+          opacity: 0;
+        }
+      }
+    `;
+    document.head.appendChild(style);
+  }
+
+  pageEl.appendChild(highlight);
+
+  setTimeout(() => highlight.remove(), 1000);
+}

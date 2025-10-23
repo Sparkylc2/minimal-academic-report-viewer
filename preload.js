@@ -6,6 +6,7 @@ const sendChannels = [
   "viewer-config",
   "main-window-resized",
   "main-window-moved",
+  "synctex-click",
 ];
 
 const onChannels = [
@@ -15,6 +16,7 @@ const onChannels = [
   "load-md",
   "reload-md",
   "restore-view-state",
+  "synctex-goto-location",
 ];
 
 const invokeChannels = ["read-file"];

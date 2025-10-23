@@ -11,12 +11,11 @@ class TabBar {
     this.view = null;
     this.visible = tabConfig.show;
 
-    console.log("Tab Config:", tabConfig);
     this.height = tabConfig.height || (isHighDPI ? 32 : 16);
 
     this.create();
 
-    if (!this.visible) this.hide();
+    if (tabConfig.show) this.hide();
   }
 
   create() {
@@ -47,6 +46,7 @@ class TabBar {
     this.bus.on("tab-bar:toggle", () => {
       this.toggle();
     });
+
     // this.tabManager.on("toggle-tab-bar", () => {
     //   console.log("receiving toggle");
     //   this.toggle();

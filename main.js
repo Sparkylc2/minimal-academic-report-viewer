@@ -18,6 +18,7 @@ const { getEventBus } = require("./modules/event_bus");
 const { getRegistry } = require("./modules/service_registry");
 const { getChannels } = require("./modules/channels");
 
+const { SyncTeXService, eventBus } = require("./modules/synctex_service");
 const CommandPalette = require("./modules/command_palette/palette");
 const TabManager = require("./modules/tab_manager");
 const TabBar = require("./modules/tab_bar/tab_bar");
@@ -199,6 +200,7 @@ let sessionState = null;
 let workspaceManager = null;
 let workspaceSwitcher = null;
 let configManager = null;
+let syncTexService = null;
 
 let filePath = null;
 const initialWorkingDir = extractWorkingDir();
@@ -667,7 +669,6 @@ async function restoreSessionState(state, mainFilePath, mainFileType) {
 }
 
 function setupEmitHandlers() {
-  bus.on();
   workspaceSwitcher.on("switch-workspace", async (workspaceId) => {
     await switchToWorkspace(workspaceId);
   });
@@ -751,6 +752,12 @@ async function createWindow() {
   );
   registry.register("workspaceSwitcher", workspaceSwitcher);
 
+  syncTexService = new SyncTeXService(mainWin);
+  registry.register("syncTexService", syncTexService);
+  syncTexService.startForwardSearchServer().catch((err) => {
+    console.error("[SyncTeX] Failed to start forward search server:", err);
+  });
+
   quickList.parentWin.workspaceManager = workspaceManager;
   mainWin.tabManager = tabManager;
   mainWin.commandPalette = commandPalette;
@@ -817,12 +824,12 @@ function registerKeyboardShortcuts() {
       quickList.toggle();
     }
   });
-  //
-  // globalShortcut.register("CommandOrControl+Shift+.", () => {
-  //   if (mainWin && !mainWin.isDestroyed() && tabBar) {
-  //     tabBar.toggle();
-  //   }
-  // });
+
+  globalShortcut.register("CommandOrControl+Shift+.", () => {
+    if (mainWin && !mainWin.isDestroyed() && tabBar) {
+      tabBar.toggle();
+    }
+  });
 
   globalShortcut.register("CommandOrControl+Shift+/", () => {
     if (
@@ -878,6 +885,9 @@ async function performClose() {
 
   if (watcher) watcher.close();
   unregisterKeyboardShortcuts();
+
+  registry.get("syncTexService").stopForwardSearchServer();
+  registry.get("syncTexService").disconnect();
 
   debugLog("[main] Quitting app");
   app.quit();
@@ -998,4 +1008,40 @@ registry.get("bus").on("load-new-md", async (_event, newPath) => {
 ipcMain.handle("read-file", async (_evt, filePath) => {
   const buf = await fsp.readFile(filePath);
   return buf.toString("utf8");
+});
+
+ipcMain.on("synctex-click", async (_event, { page, x, y }) => {
+  debugLog("[SyncTeX] Received synctex-click event");
+  const syncTexService = registry.get("syncTexService");
+
+  if (!filePath || !filePath.endsWith(".pdf")) {
+    debugLog("[SyncTeX] No active PDF file");
+    return;
+  }
+
+  debugLog(`[SyncTeX] Processing click: page=${page}, x=${x}, y=${y}`);
+  await syncTexService.syncPdfToSource(filePath, page, x, y);
+});
+
+eventBus.on("synctex-forward-search", async (data) => {
+  debugLog("[SyncTeX] Received synctex-forward-search event", data);
+  const { sourcePath, line } = data;
+  const syncTexService = registry.get("syncTexService");
+
+  if (!filePath || !filePath.endsWith(".pdf")) {
+    debugLog("[SyncTeX] No active PDF file for forward search");
+    return;
+  }
+
+  debugLog(`[SyncTeX] Forward search: ${sourcePath}:${line} → PDF`);
+
+  const location = syncTexService.sourceToPage(filePath, sourcePath, line);
+
+  if (location) {
+    debugLog(`[SyncTeX] Found PDF location:`, location);
+
+    sendToPdfView("synctex-goto-location", location);
+  } else {
+    debugLog("[SyncTeX] Could not find PDF location");
+  }
 });
