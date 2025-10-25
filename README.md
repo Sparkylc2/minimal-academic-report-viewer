@@ -2,8 +2,9 @@
 ## About
 This is a minimal PDF and Markdown viewer built for keyboard-driven workflows. There's no title bar, menu bar, or toolbars, just the content. I made this because I wanted something that matched my borderless terminal setup and didn't get in the way while writing reports.
 
-The viewer has grown to include workspace management, a quick reference system for sources, and web browsing for research. It's designed to be lightweight and keep everything accessible via keyboard shortcuts.
+The viewer has grown to include workspace management, a quick reference system for sources, and web browsing for research. It's designed to be visually lightweight and to keep everything accessible via keyboard shortcuts.
 
+The code is a mess, but I am quite busy and can't dedicate the required time to refactor it properly. 
 ### The Viewer
 <img width="504" height="327.33" alt="Screenshot 2025-10-01 at 13 54 46" src="https://github.com/user-attachments/assets/9bf064ce-430b-4e67-b7f7-de61a8034c6a" />
 
